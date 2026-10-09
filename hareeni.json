@@ -1,0 +1,16 @@
+{
+  "branch": "hareeni",
+  "name": "ai-founder-os-api",
+  "version": "1.0.0",
+  "description": "Hareeni branch configuration and metadata for AI Founder OS",
+  "settings": {
+    "environment": "development",
+    "enabledFeatures": [
+      "sales-copilot",
+      "analytics",
+      "automation"
+    ],
+    "maxLogRetentionDays": 30
+  },
+  "createdAt": "2026-10-09T14:19:00+05:30"
+}
