@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build: ./backend
+    command: alembic upgrade head
+    restart: "no"
+    environment:
+      MIGRATION_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      WORKER_DATABASE_URL: postgresql://worker_user:${WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    command: python -m app.jobs.worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      WORKER_DATABASE_URL: postgresql://worker_user:${WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      API_ORIGIN: http://api:8000
+    depends_on:
+      - api
+
+  # Optional local LLM. Start with:  docker compose --profile ollama up -d
+  # Needs RAM (a small model wants 8 GB+) and is slow on CPU-only servers.
+  ollama:
+    image: ollama/ollama
+    profiles: ["ollama"]
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+  ollama_models:
