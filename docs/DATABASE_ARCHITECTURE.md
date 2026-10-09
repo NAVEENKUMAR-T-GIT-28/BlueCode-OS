@@ -1,920 +1,620 @@
-# AI Founder OS --- Database Architecture
+# AI Founder OS — Database Architecture
 
-**Document:** `DATABASE_ARCHITECTURE.md`\
-**Product:** AI Founder OS --- AI Sales Copilot\
-**Database:** MongoDB\
-**ODM:** Mongoose\
-**Architecture:** Multi-tenant MERN SaaS\
-**External sales-data provider for MVP:** Apollo.io only\
-**Status:** MVP schema baseline
+**Document:** `DATABASE_ARCHITECTURE.md`  
+**Product:** AI Founder OS — AI Sales Copilot  
+**Database:** MongoDB  
+**ODM:** Mongoose  
+**Architecture:** Multi-tenant MERN SaaS  
+**External sales-data provider for MVP:** Apollo.io  
+**Status:** Final MVP schema baseline  
+**Collections:** 13
 
-------------------------------------------------------------------------
+---
 
 ## 1. Purpose and scope
 
-This document defines the MongoDB collections, document formats,
-constraints, indexes, and relationships for the AI Sales Copilot MVP.
+This document defines the MVP database contract: collections, document formats, field constraints, indexes, relationships, tenant-isolation rules, and operational expectations.
 
-The product flow is:
+### 1.1 MVP workflow
 
-1.  A founder creates a startup workspace and defines an Ideal Customer
-    Profile (ICP).
-2.  The founder connects their authorized Apollo account.
-3.  The system discovers companies and decision-makers through Apollo.
-4.  The system scores prospects against the ICP and records only
-    evidence-supported buying signals.
-5.  The AI drafts outreach messages.
-6.  A founder or authorized member approves messages before outbound
-    execution.
-7.  Apollo sequence/activity data available to the connected account is
-    synchronized.
-8.  The product records sales activity and generates next-best-action
-    recommendations.
-9.  Usage is tracked to enforce operational limits.
+1. A user creates or joins a startup workspace.
+2. A workspace defines one or more Ideal Customer Profiles (ICPs).
+3. The backend uses the configured Apollo integration to discover company prospects and decision-makers.
+4. Prospects are scored against an ICP. Buying signals are stored only when supported by available evidence.
+5. The AI generates outreach-message drafts.
+6. An authorized workspace member reviews and approves messages before outbound execution.
+7. Available Apollo sequence and activity information is synchronized where supported by the configured API access.
+8. Sales activities are recorded and next-best-action recommendations are generated.
+9. Provider usage and costs are recorded and checked against workspace limits.
 
-Apollo is the only external sales-data provider in this MVP. Do not
-assume that Apollo exposes every proposed signal or activity type: store
-only fields and events actually available through the connected
-account's permitted API access.
+Apollo is the only external sales-data provider in this MVP. Do not assume every signal, sequence operation, message event, or activity type is available to the configured Apollo account. Store only data that is actually returned or otherwise supported.
 
-### 1.1 Conventions
+### 1.2 Conventions
 
--   `ObjectId`: MongoDB BSON ObjectId.
--   `Date`: BSON date stored in UTC.
--   `string[]`: array of strings.
--   `ObjectId[]`: array of MongoDB ObjectIds.
--   `object`: structured object whose allowed keys should be explicitly
-    validated where practical.
--   `?`: optional field.
--   `ref`: logical Mongoose reference; it does not automatically enforce
-    referential integrity or tenant ownership.
--   All tenant-owned documents must include `startupId`.
--   Use Mongoose `timestamps: true` for mutable collections unless
-    otherwise noted.
--   Fields shown below are the application data contract. Mongoose
-    schemas should explicitly define types, enums, defaults, validation,
-    and indexes.
+- `ObjectId`: MongoDB BSON ObjectId.
+- `Date`: BSON date stored in UTC.
+- `string[]`: array of strings.
+- `ObjectId[]`: array of MongoDB ObjectIds.
+- `object`: structured object whose allowed keys must be validated by the application.
+- Optional fields are marked with `?` in schema examples.
+- `ref` indicates a logical Mongoose reference; it does not enforce foreign-key integrity or tenant ownership.
+- Every tenant-owned document must contain `startupId`.
+- Use Mongoose `timestamps: true` for mutable collections represented with `createdAt` and `updatedAt`. Append-only records may use only `createdAt`.
+- Enums and validation rules below are the application contract. Implement them explicitly in Mongoose and service logic.
 
-------------------------------------------------------------------------
+---
 
 ## 2. Collection inventory
 
-  --------------------------------------------------------------------------------
-                     \# Collection            Responsibility      Tenant-owned
-  --------------------- --------------------- ------------------- ----------------
-                      1 `users`               User identity and   No
-                                              authentication      
+| # | Collection | Responsibility | Tenant scope |
+|---:|---|---|---|
+| 1 | `users` | User identity and authentication | Global |
+| 2 | `startups` | Workspace, plan, trial, and spend settings | Tenant root |
+| 3 | `startupMembers` | User membership and workspace roles | Tenant-owned |
+| 4 | `icps` | Ideal Customer Profile criteria | Tenant-owned |
+| 5 | `prospects` | Company records discovered from Apollo | Tenant-owned |
+| 6 | `decisionMakers` | Contacts associated with prospects | Tenant-owned |
+| 7 | `leadScores` | Versioned prospect-to-ICP score history | Tenant-owned |
+| 8 | `buyingSignals` | Evidence-backed buying signals | Tenant-owned |
+| 9 | `outreachCampaigns` | Campaign configuration and Apollo sequence reference | Tenant-owned |
+| 10 | `outreachMessages` | Drafts, approvals, and outbound status | Tenant-owned |
+| 11 | `salesActivities` | Sales and synchronization event timeline | Tenant-owned |
+| 12 | `nextBestActions` | AI-recommended actions | Tenant-owned |
+| 13 | `usageRecords` | Provider usage and cost ledger | Tenant-owned |
 
-                      2 `startups`            Tenant/workspace    Root tenant
-                                              and startup profile 
+A separate `leads` collection is not required for this MVP: `prospects` plus `leadScores` cover the initial qualification workflow. Replies and other supported activity events can be recorded in `salesActivities`; a separate `replies` collection is not included.
 
-                      3 `startupMembers`      Membership and      Yes
-                                              workspace roles     
+---
 
-                      4 `integrations`        Apollo OAuth        Yes
-                                              connection and      
-                                              status              
-
-                      5 `icps`                Ideal Customer      Yes
-                                              Profile definitions 
-
-                      6 `prospects`           Apollo-discovered   Yes
-                                              companies           
-
-                      7 `decisionMakers`      Contacts belonging  Yes
-                                              to prospects        
-
-                      8 `leadScores`          Versioned prospect  Yes
-                                              fit scores          
-
-                      9 `buyingSignals`       Evidence-backed     Yes
-                                              signals derived     
-                                              from Apollo data    
-
-                     10 `outreachCampaigns`   Product-side        Yes
-                                              campaign            
-                                              configuration and   
-                                              Apollo sequence     
-                                              reference           
-
-                     11 `outreachMessages`    Drafts, approval    Yes
-                                              state and outbound  
-                                              synchronization     
-                                              status              
-
-                     12 `salesActivities`     Sales event         Yes
-                                              timeline            
-
-                     13 `nextBestActions`     AI-recommended next Yes
-                                              actions             
-
-                     14 `usageRecords`        Apollo and LLM      Yes
-                                              usage accounting    
-  --------------------------------------------------------------------------------
-
-A separate `leads` collection is not required for the MVP. `prospects`
-plus versioned `leadScores` cover the initial qualification workflow. A
-separate `replies` collection is also not required initially;
-reply/activity events belong in `salesActivities`, with recommendations
-in `nextBestActions`.
-
-------------------------------------------------------------------------
-
-## 3. Shared rules and constraints
+## 3. Shared constraints and tenant isolation
 
 ### 3.1 Tenant isolation
 
-Every tenant-owned collection must have a required `startupId: ObjectId`
-referencing `startups`.
+For every protected request:
 
-For every request: 1. Authenticate the user. 2. Resolve the active
-startup from trusted membership/session context. 3. Confirm an active
-`startupMembers` record grants access. 4. Add `startupId` to every
-tenant-owned query. 5. Validate that every referenced record belongs to
-the same startup before reading or mutating it.
+1. Authenticate the user.
+2. Resolve the active startup from trusted server-side session or membership context.
+3. Verify that the user has an active `startupMembers` record for that startup.
+4. Include `startupId` in every tenant-owned query.
+5. Validate that every referenced document belongs to the same startup before reading or changing it.
+6. Apply role checks for privileged actions such as workspace management, integration configuration, and approvals.
 
-**Required pattern:**
+Correct query pattern:
 
-``` js
-// Correct: scope the query to the authenticated tenant.
+```js
 const prospect = await Prospect.findOne({
   _id: prospectId,
   startupId: req.startupId
 });
-
-// Incorrect: tenant-owned records must not be queried by _id alone.
-const prospect = await Prospect.findById(prospectId);
 ```
 
-Mongoose `ref` fields do not enforce foreign keys. Tenant ownership and
-cross-document relationships must be validated in service logic and
-covered by tests.
+Do not query tenant-owned records by `_id` alone. Mongoose `ref` and `populate()` do not automatically enforce tenant consistency.
 
 ### 3.2 General validation
 
--   Reject invalid ObjectIds before querying.
--   Trim required strings and enforce sensible maximum lengths.
--   Normalize user email addresses to lowercase before saving.
--   Validate enum values and numeric ranges.
--   Never trust `startupId`, role, or approval status supplied by the
-    client without server-side authorization.
--   Do not store plaintext passwords or expose integration tokens.
--   Avoid storing complete raw Apollo responses unless a specific use
-    case requires them; persist only the fields needed by the product.
--   Use UTC dates and server-generated timestamps.
--   Use pagination for list endpoints.
--   Use soft/status-based lifecycle changes where historical sales
-    records must remain auditable.
+- Reject malformed ObjectIds before querying.
+- Trim required strings and enforce reasonable maximum lengths.
+- Normalize user emails to lowercase.
+- Validate enum values, numeric ranges, and nested object shapes.
+- Never trust `startupId`, role, approval status, or ownership supplied by the client.
+- Store password hashes, never plaintext passwords.
+- Keep API credentials and secrets out of frontend code, API responses, logs, and error messages.
+- Minimize stored provider responses; persist only the fields the product needs.
+- Use server-generated timestamps and UTC dates.
+- Paginate collection-list endpoints.
+- Prefer status/archive transitions where historical sales records must remain available.
 
-### 3.3 Recommended common index strategy
+### 3.3 Index management
 
-Create indexes explicitly in migrations or controlled application
-startup. Do not depend on production automatic index creation.
+Create indexes through controlled migrations or deployment steps. Do not rely on automatic index creation in production. For optional external IDs, use partial unique indexes that apply only when the value exists and is a non-empty string. Confirm syntax against the installed MongoDB and Mongoose versions.
 
-For partial unique indexes, only apply uniqueness when the external ID
-exists and is a non-empty string. Verify the exact index syntax against
-the installed MongoDB/Mongoose versions.
-
-------------------------------------------------------------------------
+---
 
 ## 4. Collection schemas
 
-## 4.1 `users`
+The following shapes document the agreed application fields. Mongoose schemas should additionally specify `required`, `enum`, defaults, trimming, bounds, and index declarations as described below.
 
-**Purpose:** Authentication identity, independent of any one startup
-workspace.
+### 4.1 `users`
 
-``` ts
+**Purpose:** Global user identity and authentication.
+
+```ts
 {
   _id: ObjectId,
-  name: string,
-  email: string,                 // normalized lowercase
-  passwordHash: string,          // bcrypt hash only
-  status: "active" | "pending_verification" | "disabled",
-  emailVerifiedAt?: Date,
-  lastLoginAt?: Date,
+  name: string,              // required
+  email: string,             // required, unique, lowercase
+  passwordHash: string,      // required
+  status: string,            // required
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
-**Constraints** - `name`: required, trimmed, bounded length. - `email`:
-required, normalized lowercase, valid email format. - `passwordHash`:
-required for password-based authentication; never return it in API
-responses. - `status`: required enum; default `pending_verification` or
-the state required by the signup flow. - Never store plaintext
-passwords, raw password-reset tokens, or authentication secrets.
+**Constraints**
+- `name`, `email`, `passwordHash`, and `status` are required.
+- Normalize `email` to lowercase and validate its format.
+- `passwordHash` must contain a secure password hash, never the original password.
+- Define a finite `status` enum in the application, such as `active`, `pending_verification`, and `disabled`.
+- Exclude `passwordHash` from normal API responses.
 
-**Indexes** - Unique `{ email: 1 }`. - Optional `{ status: 1 }` if
-administrative status queries need it.
+**Indexes**
+- Unique: `{ email: 1 }`
+- Optional: `{ status: 1 }` if administrative status queries need it.
 
-------------------------------------------------------------------------
+### 4.2 `startups`
 
-## 4.2 `startups`
+**Purpose:** Tenant/workspace settings, plan state, trial period, and API spending cap.
 
-**Purpose:** Tenant/workspace, business context, and plan/status
-metadata.
-
-``` ts
+```ts
 {
   _id: ObjectId,
-  name: string,
-  website?: string,
-  description?: string,
-  industry?: string,
-  productDescription?: string,
-  targetMarket?: string,
-  salesObjective?: string,
-  ownerUserId: ObjectId,          // ref: users
-  plan: "trial" | "starter" | "growth" | "pro",
-  status: "active" | "suspended" | "closed",
-  settings: {
-    timezone: string,
-    defaultSenderName?: string
-  },
+  ownerUserId: ObjectId,      // required, ref: users
+  name: string,               // required
+  plan: string,               // required
+  status: string,             // required
+  trialEndsAt?: Date,
+  apiSpendCap?: number,
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
-**Constraints** - `name`, `ownerUserId`, `plan`, and `status` are
-required. - `ownerUserId` must reference an existing user. -
-`settings.timezone` should be a valid IANA timezone identifier. - Plan
-quotas and spend caps must be enforced by backend policy/configuration,
-not inferred from this document alone.
+**Constraints**
+- `ownerUserId`, `name`, `plan`, and `status` are required.
+- `ownerUserId` must reference an existing user.
+- Define allowed `plan` and `status` values centrally.
+- `trialEndsAt`, when present, must be a valid date.
+- `apiSpendCap`, when present, must be a non-negative amount in a documented currency/unit.
+- Enforce trial expiry, plan limits, and spending caps in backend policy logic; fields alone do not enforce them.
+- Keep ownership consistent with `startupMembers`: the owner should have an active `owner` membership, or the service layer must document and enforce a single alternative source of truth.
 
-**Indexes** - `{ ownerUserId: 1 }`. - `{ status: 1 }`.
+**Indexes**
+- `{ ownerUserId: 1 }`
+- `{ status: 1 }`
+- Optional: `{ trialEndsAt: 1 }` for trial-expiry processing.
 
-------------------------------------------------------------------------
+### 4.3 `startupMembers`
 
-## 4.3 `startupMembers`
+**Purpose:** Many-to-many membership between users and startup workspaces.
 
-**Purpose:** Many-to-many relationship between users and startup
-workspaces.
-
-``` ts
+```ts
 {
   _id: ObjectId,
-  startupId: ObjectId,            // ref: startups
-  userId: ObjectId,               // ref: users
-  role: "owner" | "admin" | "member",
-  status: "invited" | "active" | "removed",
-  invitedBy?: ObjectId,           // ref: users
-  joinedAt?: Date,
+  startupId: ObjectId,        // required, ref: startups
+  userId: ObjectId,            // required, ref: users
+  role: string,                // required
+  status: string,              // required
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
-**Constraints** - `startupId`, `userId`, `role`, and `status` are
-required. - A user can have only one membership record per startup;
-update its status rather than creating duplicates. - Authorization must
-require `status: "active"`. - Only authorized roles may invite members,
-alter roles, or manage integrations. - The startup owner must have an
-active membership record or the application must consistently enforce
-ownership through a documented alternative.
+**Constraints**
+- `startupId`, `userId`, `role`, and `status` are required.
+- Define role values such as `owner`, `admin`, and `member`.
+- Define status values such as `invited`, `active`, and `removed`.
+- A user may have only one membership document per startup; update its status instead of inserting duplicates.
+- Only active memberships authorize workspace access.
+- Restrict invitations, role changes, integration configuration, and approvals according to role policy.
 
-**Indexes** - Unique `{ startupId: 1, userId: 1 }`. -
-`{ userId: 1, status: 1 }`.
+**Indexes**
+- Unique: `{ startupId: 1, userId: 1 }`
+- `{ userId: 1, status: 1 }`
 
-------------------------------------------------------------------------
+### 4.4 `icps`
 
-## 4.4 `integrations`
+**Purpose:** Target-market criteria used to discover and evaluate prospects.
 
-**Purpose:** Store the Apollo connection metadata and securely stored
-OAuth credentials for a startup.
-
-``` ts
+```ts
 {
   _id: ObjectId,
-  startupId: ObjectId,            // ref: startups
-  provider: "apollo",
-  status: "connected" | "disconnected" | "error",
-  externalAccountId?: string,
-  accessTokenEncrypted?: string,
-  refreshTokenEncrypted?: string,
-  tokenExpiresAt?: Date,
-  grantedScopes: string[],
-  connectedBy: ObjectId,          // ref: users
-  lastSyncedAt?: Date,
-  lastError?: {
-    code?: string,
-    message?: string,
-    occurredAt: Date
-  },
+  startupId: ObjectId,        // required, ref: startups
+  name: string,               // required
+  criteria: object,           // required
+  criteriaVersion?: number,
+  isActive?: boolean,
+  createdBy: ObjectId,        // required, ref: users
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
-**Constraints** - `startupId`, `provider`, `status`, `grantedScopes`,
-and `connectedBy` are required. - MVP `provider` enum is only
-`"apollo"`. - Token values must be encrypted before persistence and
-decrypted only by backend integration code. - Tokens must never be sent
-to React clients, logged, or included in error messages. - Request only
-required scopes. Implement disconnect/revocation and token refresh only
-according to the supported Apollo OAuth lifecycle. - `lastError.message`
-must be sanitized; do not put credentials or full sensitive request
-headers into it.
+**Constraints**
+- `startupId`, `name`, `criteria`, and `createdBy` are required.
+- Validate the allowed structure of `criteria`; do not accept arbitrary unbounded objects.
+- Increment `criteriaVersion` whenever meaningful criteria change. Define its initial value and default in the application.
+- Default `isActive` consistently, normally to `true`.
+- `createdBy` must be an authorized member of the same startup.
+- Translate ICP criteria into only those Apollo filters supported by the configured API access.
 
-**Indexes** - Unique `{ startupId: 1, provider: 1 }`. - `{ status: 1 }`.
+**Recommended criteria structure**
 
-------------------------------------------------------------------------
-
-## 4.5 `icps`
-
-**Purpose:** Target-market criteria used to discover and evaluate
-prospects.
-
-``` ts
+```ts
 {
-  _id: ObjectId,
-  startupId: ObjectId,            // ref: startups
-  name: string,
-  description?: string,
-  criteria: {
-    industries: string[],
-    countries: string[],
-    regions?: string[],
-    employeeRanges?: string[],
-    revenueRanges?: string[],
-    technologies?: string[],
-    companyKeywords?: string[],
-    excludedIndustries?: string[],
-    excludedCompanies?: string[],
-    targetJobTitles: string[],
-    targetSeniority?: string[],
-    contactLocations?: string[]
-  },
-  salesObjective?: string,
-  isActive: boolean,
-  createdBy: ObjectId,             // ref: users
-  createdAt: Date,
-  updatedAt: Date
+  industries?: string[],
+  countries?: string[],
+  regions?: string[],
+  employeeRanges?: string[],
+  revenueRanges?: string[],
+  technologies?: string[],
+  companyKeywords?: string[],
+  excludedIndustries?: string[],
+  excludedCompanies?: string[],
+  targetJobTitles?: string[],
+  targetSeniority?: string[],
+  contactLocations?: string[]
 }
 ```
 
-**Constraints** - `startupId`, `name`, `criteria`,
-`criteria.industries`, `criteria.countries`, `criteria.targetJobTitles`,
-`isActive`, and `createdBy` are required. Empty arrays may be allowed if
-the product supports progressively building an ICP. - `createdBy` must
-have permission to create/edit ICPs in this startup. - Normalize
-country/industry/title values consistently before sending them to
-Apollo. - Do not assume every criterion maps to a supported Apollo
-filter; validate/translate filters in the Apollo integration service. -
-Enforce plan-specific ICP limits in application logic.
+This is the recommended shape of the `criteria` object, not an additional collection.
 
-**Indexes** - `{ startupId: 1, isActive: 1 }`. -
-`{ startupId: 1, createdAt: -1 }`.
+**Indexes**
+- `{ startupId: 1, isActive: 1 }`
+- `{ startupId: 1, createdAt: -1 }`
 
-------------------------------------------------------------------------
+### 4.5 `prospects`
 
-## 4.6 `prospects`
+**Purpose:** Company-level records discovered from Apollo and evaluated by the product.
 
-**Purpose:** Company-level records discovered from Apollo and evaluated
-by AI Sales Copilot.
-
-``` ts
+```ts
 {
   _id: ObjectId,
-  startupId: ObjectId,            // ref: startups
-  icpId: ObjectId,                // ref: icps
+  startupId: ObjectId,        // required, ref: startups
+  icpId: ObjectId,            // required, ref: icps
   apolloOrganizationId?: string,
-  name: string,
+  name: string,               // required
   domain?: string,
-  websiteUrl?: string,
-  industry?: string,
-  employeeCount?: number,
-  employeeRange?: string,
-  revenueRange?: string,
-  country?: string,
-  region?: string,
-  city?: string,
-  technologies: string[],
-  companyDescription?: string,
-  linkedinUrl?: string,
-  source: "apollo",
-  sourceSnapshot?: object,        // selected, minimized fields only
-  status:
-    | "discovered"
-    | "qualified"
-    | "enriched"
-    | "in_sequence"
-    | "replied"
-    | "meeting"
-    | "disqualified"
-    | "do_not_contact",
-  qualificationReason?: string,
-  lastEnrichedAt?: Date,
-  lastApolloSyncAt?: Date,
+  status: string,              // required
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
-**Constraints** - `startupId`, `icpId`, `name`, `source`, `status`, and
-`technologies` are required. - `icpId` must reference an ICP in the same
-startup. - `source` is `"apollo"` in this MVP. - `employeeCount`, when
-present, must be a non-negative integer. - `apolloOrganizationId` is the
-preferred external duplicate key when provided. - Normalize domain to
-lowercase and remove URL protocol/path for matching. - `sourceSnapshot`
-must be allowlisted/minimized; do not blindly persist full API
-responses. - A `do_not_contact` status must block outbound operations
-until a permitted, explicit policy-driven change occurs.
+**Constraints**
+- `startupId`, `icpId`, `name`, and `status` are required.
+- `icpId` must refer to an ICP belonging to the same startup.
+- Define allowed prospect states centrally, for example `discovered`, `qualified`, `enriched`, `in_sequence`, `replied`, `meeting`, `disqualified`, and `do_not_contact`.
+- Normalize `domain` to lowercase and remove protocol, path, and trailing slash for matching.
+- Use `apolloOrganizationId` as the preferred external deduplication key when available.
+- A `do_not_contact` prospect must be blocked from outbound operations unless an authorized, explicit policy permits a status change.
+- **Current relationship decision:** each prospect has one required `icpId`. If the same company must be associated with multiple ICPs, revise this relationship before implementing that requirement; the current schema does not model many-to-many prospect-to-ICP membership.
 
-**Indexes** - Unique partial `{ startupId: 1, apolloOrganizationId: 1 }`
-when `apolloOrganizationId` exists and is non-empty. -
-`{ startupId: 1, icpId: 1, status: 1 }`. - `{ startupId: 1, domain: 1 }`
-(non-unique).
+**Indexes**
+- Unique partial: `{ startupId: 1, apolloOrganizationId: 1 }` when `apolloOrganizationId` exists and is non-empty.
+- `{ startupId: 1, icpId: 1, status: 1 }`
+- `{ startupId: 1, domain: 1 }` (non-unique).
 
-------------------------------------------------------------------------
-
-## 4.7 `decisionMakers`
+### 4.6 `decisionMakers`
 
 **Purpose:** People/contacts associated with a company prospect.
 
-``` ts
+```ts
 {
   _id: ObjectId,
-  startupId: ObjectId,            // ref: startups
-  prospectId: ObjectId,           // ref: prospects
+  startupId: ObjectId,        // required, ref: startups
+  prospectId: ObjectId,       // required, ref: prospects
   apolloPersonId?: string,
-  firstName: string,
-  lastName?: string,
-  fullName: string,
+  fullName: string,            // required
   jobTitle?: string,
-  seniority?: string,
-  department?: string,
   businessEmail?: string,
-  emailStatus?: string,           // Apollo-provided value if available
-  phone?: string,
   linkedinUrl?: string,
-  country?: string,
-  city?: string,
-  isPrimary: boolean,
-  outreachStatus:
-    | "not_contacted"
-    | "drafted"
-    | "approved"
-    | "in_sequence"
-    | "replied"
-    | "do_not_contact",
-  lastEnrichedAt?: Date,
+  emailVerified?: boolean,
+  outreachStatus: string,     // required
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
-**Constraints** - `startupId`, `prospectId`, `firstName`, `fullName`,
-`isPrimary`, and `outreachStatus` are required. - `prospectId` must
-reference a prospect in the same startup. - `apolloPersonId` is the
-preferred external duplicate key when present. - Normalize email to
-lowercase and trim whitespace. - Do not infer that an email is verified
-unless Apollo returns an explicit status supporting that claim. -
-`do_not_contact` must block outbound actions for that contact. - Collect
-only contact fields required for qualification and permitted outreach.
+**Constraints**
+- `startupId`, `prospectId`, `fullName`, and `outreachStatus` are required.
+- `prospectId` must reference a prospect in the same startup.
+- Use `apolloPersonId` as the preferred external deduplication key when available.
+- Normalize `businessEmail` to lowercase and trim whitespace.
+- Set `emailVerified` only when the available source explicitly supports verification; do not infer it from email presence.
+- Define allowed outreach states centrally, such as `not_contacted`, `drafted`, `approved`, `in_sequence`, `replied`, and `do_not_contact`.
+- A `do_not_contact` contact must not be added to outbound execution.
 
-**Indexes** - Unique partial `{ startupId: 1, apolloPersonId: 1 }` when
-`apolloPersonId` exists and is non-empty. -
-`{ startupId: 1, prospectId: 1 }`. -
-`{ startupId: 1, businessEmail: 1 }` (non-unique unless product policy
-guarantees uniqueness).
+**Indexes**
+- Unique partial: `{ startupId: 1, apolloPersonId: 1 }` when `apolloPersonId` exists and is non-empty.
+- `{ startupId: 1, prospectId: 1 }`
+- `{ startupId: 1, businessEmail: 1 }` (non-unique unless the product guarantees uniqueness).
 
-------------------------------------------------------------------------
+### 4.7 `leadScores`
 
-## 4.8 `leadScores`
+**Purpose:** Versioned score history for a prospect against a particular ICP.
 
-**Purpose:** Immutable/versioned score results for a prospect against a
-particular ICP.
-
-``` ts
+```ts
 {
   _id: ObjectId,
-  startupId: ObjectId,            // ref: startups
-  prospectId: ObjectId,           // ref: prospects
-  icpId: ObjectId,                // ref: icps
-  score: number,                  // 0–100
-  category: "high" | "medium" | "low",
-  breakdown: {
-    industryFit: number,
-    companySizeFit: number,
-    geographyFit: number,
-    technologyFit: number,
-    decisionMakerFit: number,
-    buyingSignalScore: number
-  },
-  reasons: string[],
-  missingData: string[],
-  scoringVersion: string,
-  scoredAt: Date,
+  startupId: ObjectId,        // required, ref: startups
+  prospectId: ObjectId,       // required, ref: prospects
+  icpId: ObjectId,            // required, ref: icps
+  score: number,               // required, 0–100
+  category: string,            // required
+  explanation?: string,
+  scoringVersion: string,      // required
+  icpVersion: number,          // required
+  scoredAt: Date,              // required
   createdAt: Date
 }
 ```
 
-**Constraints** - All references must belong to the same startup. -
-`score` and each breakdown component must be numeric and within
-`0–100`. - `category` must be derived from documented application
-thresholds, not independently guessed. - `reasons` must be traceable to
-available evidence/data. - `scoringVersion` is required to interpret
-historical scores after the scoring algorithm changes. - `scoredAt` is
-the scoring event time; score records should be append-only in normal
-operation.
+**Constraints**
+- All references must belong to the same startup.
+- `score` must be between `0` and `100`.
+- Define allowed categories, for example `high`, `medium`, and `low`, using documented thresholds.
+- `scoringVersion` identifies the scoring algorithm version.
+- `icpVersion` records which version of ICP criteria was used.
+- Preserve score history by inserting a new record for a new scoring event rather than overwriting historical scores.
+- Keep explanations evidence-based and avoid claiming that missing information is known.
 
-**Indexes** - `{ startupId: 1, prospectId: 1, scoredAt: -1 }`. -
-`{ startupId: 1, icpId: 1, score: -1 }`.
+**Indexes**
+- `{ startupId: 1, prospectId: 1, scoredAt: -1 }`
+- `{ startupId: 1, icpId: 1, score: -1 }`
 
-------------------------------------------------------------------------
+### 4.8 `buyingSignals`
 
-## 4.9 `buyingSignals`
+**Purpose:** Evidence-backed potential buying signals supported by available Apollo data.
 
-**Purpose:** Record potential buying signals only when supported by
-Apollo data or activity data available to the connected account.
-
-``` ts
+```ts
 {
   _id: ObjectId,
-  startupId: ObjectId,            // ref: startups
-  prospectId: ObjectId,            // ref: prospects
-  decisionMakerId?: ObjectId,     // ref: decisionMakers
-  signalType:
-    | "company_growth"
-    | "technology"
-    | "leadership"
-    | "contact_change"
-    | "engagement"
-    | "other",
-  description: string,
-  evidence: [{
-    field: string,
-    value: string
-  }],
-  source: "apollo",
-  confidence?: number,             // 0–1
-  detectedAt: Date,
-  observedAt?: Date,
-  status: "active" | "stale" | "dismissed",
+  startupId: ObjectId,        // required, ref: startups
+  prospectId: ObjectId,       // required, ref: prospects
+  decisionMakerId?: ObjectId, // optional, ref: decisionMakers
+  signalType: string,          // required
+  description: string,         // required
+  evidence: object[],          // required
+  confidence: number,          // required
+  status: string,              // required
+  detectedAt: Date,            // required
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
-**Constraints** - `startupId`, `prospectId`, `signalType`,
-`description`, `evidence`, `source`, `detectedAt`, and `status` are
-required. - `prospectId` and optional `decisionMakerId` must belong to
-the same startup. - `source` is `"apollo"` in the MVP. - `confidence`,
-if present, must be between `0` and `1` and must be based on an
-explainable evaluation. Do not use a fabricated confidence score. - Each
-signal must include supporting evidence. Do not save an inferred event
-as a fact if no Apollo field/activity supports it. - Signal categories
-are product-side classifications; they do not guarantee that Apollo
-exposes all such data. If no signal is available, scoring can proceed
-using other fit criteria. - Define staleness rules in application logic
-and preserve dismissed status.
+**Recommended evidence item**
 
-**Indexes** - `{ startupId: 1, prospectId: 1, detectedAt: -1 }`. -
-`{ startupId: 1, status: 1 }`.
+```ts
+{
+  field: string,
+  value: string
+}
+```
 
-------------------------------------------------------------------------
+**Constraints**
+- `startupId`, `prospectId`, `signalType`, `description`, `evidence`, `confidence`, `status`, and `detectedAt` are required in the supplied schema.
+- `prospectId` and optional `decisionMakerId` must belong to the same startup; if a decision maker is provided, it must belong to that prospect.
+- `evidence` must contain at least one meaningful supporting item. Validate allowed keys and bound the size of each item.
+- `confidence` must be between `0` and `1` and should represent an explainable assessment, not fabricated certainty.
+- Define signal types centrally, for example `company_growth`, `technology`, `leadership`, `contact_change`, `engagement`, and `other`.
+- Define status values such as `active`, `stale`, and `dismissed`.
+- Create a signal only when available Apollo fields or supported activity data provide evidence. Signal categories do not guarantee that Apollo exposes every corresponding data point.
 
-## 4.10 `outreachCampaigns`
+**Indexes**
+- `{ startupId: 1, prospectId: 1, detectedAt: -1 }`
+- `{ startupId: 1, status: 1 }`
 
-**Purpose:** Product-side campaign configuration and reference to a
-sequence managed by Apollo.
+### 4.9 `outreachCampaigns`
 
-``` ts
+**Purpose:** Product-side campaign configuration and optional reference to a sequence managed by Apollo.
+
+```ts
 {
   _id: ObjectId,
-  startupId: ObjectId,            // ref: startups
-  icpId: ObjectId,                 // ref: icps
-  name: string,
-  description?: string,
-  objective: string,
-  channel: "email",
-  status:
-    | "draft"
-    | "pending_approval"
-    | "approved"
-    | "active"
-    | "paused"
-    | "completed"
-    | "cancelled",
+  startupId: ObjectId,        // required, ref: startups
+  icpId: ObjectId,            // required, ref: icps
+  name: string,                // required
+  channel: string,             // required
+  status: string,              // required
   apolloSequenceId?: string,
-  settings: {
-    maxContacts?: number,
-    followUpEnabled: boolean,
-    followUpCount?: number
-  },
-  createdBy: ObjectId,             // ref: users
-  approvedBy?: ObjectId,           // ref: users
+  createdBy: ObjectId,         // required, ref: users
+  approvedBy?: ObjectId,       // optional, ref: users
   approvedAt?: Date,
-  startedAt?: Date,
-  completedAt?: Date,
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
-**Constraints** - `startupId`, `icpId`, `name`, `objective`, `channel`,
-`status`, `settings.followUpEnabled`, and `createdBy` are required. -
-`icpId` must belong to the same startup. - `channel` is `"email"` in
-this MVP. - `maxContacts` and `followUpCount`, if present, must be
-non-negative integers within application limits. - `approvedBy` must be
-an authorized member of the same startup. - Do not activate an outbound
-sequence until approval is recorded and revalidated. -
-`apolloSequenceId` is an external identifier, not a MongoDB reference.
+**Constraints**
+- `startupId`, `icpId`, `name`, `channel`, `status`, and `createdBy` are required.
+- `icpId` must belong to the same startup.
+- The MVP channel is `email`; reject unsupported channels until implemented.
+- Define campaign states centrally, for example `draft`, `pending_approval`, `approved`, `active`, `paused`, `completed`, and `cancelled`.
+- `createdBy` and optional `approvedBy` must be authorized members of the same startup.
+- Record `approvedAt` only after a valid approval action.
+- Revalidate campaign approval/state before activating an outbound operation.
+- `apolloSequenceId` is an external provider identifier, not a MongoDB reference. Use it only if the connected Apollo API permissions support the relevant operation.
 
-**Indexes** - `{ startupId: 1, status: 1 }`. -
-`{ startupId: 1, createdAt: -1 }`. -
-`{ startupId: 1, apolloSequenceId: 1 }` (non-unique unless sequence
-ownership semantics make uniqueness safe).
+**Indexes**
+- `{ startupId: 1, status: 1 }`
+- `{ startupId: 1, createdAt: -1 }`
+- `{ startupId: 1, apolloSequenceId: 1 }` (non-unique unless uniqueness is guaranteed by the integration contract).
 
-------------------------------------------------------------------------
+### 4.10 `outreachMessages`
 
-## 4.11 `outreachMessages`
+**Purpose:** Generated message drafts, human approval, and outbound execution status.
 
-**Purpose:** Individual generated message drafts, approval decisions,
-and outbound synchronization state.
-
-``` ts
+```ts
 {
   _id: ObjectId,
-  startupId: ObjectId,             // ref: startups
-  campaignId: ObjectId,            // ref: outreachCampaigns
-  prospectId: ObjectId,             // ref: prospects
-  decisionMakerId: ObjectId,       // ref: decisionMakers
-  messageType: "initial" | "follow_up" | "reply",
+  startupId: ObjectId,        // required, ref: startups
+  campaignId: ObjectId,      // required, ref: outreachCampaigns
+  prospectId: ObjectId,      // required, ref: prospects
+  decisionMakerId: ObjectId, // required, ref: decisionMakers
   subject?: string,
-  body: string,
-  personalizationContext?: {
-    icpId?: ObjectId,
-    leadScoreId?: ObjectId,
-    buyingSignalIds?: ObjectId[],
-    startupContextSummary?: string
-  },
-  approvalStatus:
-    | "pending"
-    | "approved"
-    | "rejected"
-    | "revision_requested",
-  approvedBy?: ObjectId,           // ref: users
+  body: string,               // required
+  approvalStatus: string,     // required
+  approvedBy?: ObjectId,      // optional, ref: users
   approvedAt?: Date,
-  status:
-    | "draft"
-    | "ready"
-    | "queued"
-    | "sent"
-    | "delivered"
-    | "replied"
-    | "bounced"
-    | "failed"
-    | "cancelled",
-  apolloSequenceId?: string,
-  apolloContactId?: string,
+  status: string,             // required
+  idempotencyKey: string,     // required
   apolloMessageId?: string,
   sentAt?: Date,
-  errorMessage?: string,
-  createdBy: ObjectId,             // ref: users; system actor can be represented by a documented service identity
+  createdBy: ObjectId,        // required, ref: users
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
-**Constraints** - `startupId`, `campaignId`, `prospectId`,
-`decisionMakerId`, `messageType`, `body`, `approvalStatus`, `status`,
-and `createdBy` are required. - All internal references must belong to
-the same startup and the selected decision maker must belong to the
-selected prospect. - `body` must be non-empty and length-limited. - For
-email messages, require a non-empty subject before sending. -
-`approvedBy` and `approvedAt` must be set only after a valid approval
-action. - Before queueing/sending, re-check approval, tenant ownership,
-prospect/contact do-not-contact state, and current campaign state. -
-Failed retries must be idempotent; do not blindly repeat an external
-create/send operation. - `apolloSequenceId`, `apolloContactId`, and
-`apolloMessageId` are external identifiers. - Sanitize `errorMessage`;
-never store tokens or sensitive headers.
+**Constraints**
+- All required fields in the schema must be present; `body` must be non-empty and length-limited.
+- `campaignId`, `prospectId`, and `decisionMakerId` must belong to the same startup.
+- The selected decision maker must belong to the selected prospect.
+- For email, require a non-empty subject before sending.
+- Define `approvalStatus` values centrally, such as `pending`, `approved`, `rejected`, and `revision_requested`.
+- Define message `status` values centrally, such as `draft`, `ready`, `queued`, `sent`, `delivered`, `replied`, `bounced`, `failed`, and `cancelled`.
+- `approvedBy` and `approvedAt` must be set only after a valid approval action.
+- Before queueing or sending, re-check approval, active campaign state, tenant ownership, prospect/contact suppression status, and current message status.
+- Enforce uniqueness/idempotency for the key within the startup, and do not blindly retry an external operation after an ambiguous timeout.
+- `apolloMessageId` is an external identifier; persist it only when the provider returns a stable ID.
+- Sanitize any provider errors recorded by the application. Do not store secrets in errors.
 
-**Indexes** - `{ startupId: 1, campaignId: 1, status: 1 }`. -
-`{ startupId: 1, decisionMakerId: 1, createdAt: -1 }`. -
-`{ startupId: 1, approvalStatus: 1 }`. - Optional unique partial index
-on `{ startupId: 1, apolloMessageId: 1 }` when a stable message ID is
-provided and uniqueness is guaranteed by Apollo.
+**Indexes**
+- `{ startupId: 1, campaignId: 1, status: 1 }`
+- `{ startupId: 1, decisionMakerId: 1, createdAt: -1 }`
+- `{ startupId: 1, approvalStatus: 1 }`
+- Unique: `{ startupId: 1, idempotencyKey: 1 }`
+- Optional unique partial: `{ startupId: 1, apolloMessageId: 1 }` only if Apollo guarantees stable uniqueness.
 
-------------------------------------------------------------------------
+### 4.11 `salesActivities`
 
-## 4.12 `salesActivities`
+**Purpose:** Timeline of sales events and supported provider-synchronized activity.
 
-**Purpose:** Timeline of meaningful sales events, synchronized Apollo
-activity, user actions, and product-generated events.
-
-``` ts
+```ts
 {
   _id: ObjectId,
-  startupId: ObjectId,             // ref: startups
-  prospectId?: ObjectId,           // ref: prospects
-  decisionMakerId?: ObjectId,      // ref: decisionMakers
-  campaignId?: ObjectId,           // ref: outreachCampaigns
-  messageId?: ObjectId,            // ref: outreachMessages
-  activityType:
-    | "prospect_discovered"
-    | "contact_enriched"
-    | "score_updated"
-    | "signal_detected"
-    | "message_approved"
-    | "sequence_added"
-    | "message_sent"
-    | "message_replied"
-    | "meeting_opportunity"
-    | "status_changed"
-    | "integration_error",
-  source: "apollo" | "ai_sales_copilot" | "user",
-  summary: string,
-  details?: object,
+  startupId: ObjectId,        // required, ref: startups
+  prospectId: ObjectId,       // required, ref: prospects
+  campaignId?: ObjectId,      // optional, ref: outreachCampaigns
+  messageId?: ObjectId,       // optional, ref: outreachMessages
+  activityType: string,       // required
+  summary: string,             // required
+  occurredAt: Date,            // required
   externalActivityId?: string,
-  occurredAt: Date,
   createdAt: Date
 }
 ```
 
-**Constraints** - `startupId`, `activityType`, `source`, `summary`, and
-`occurredAt` are required. - Every optional internal reference must
-belong to the same startup. - Store only activities actually observed or
-generated by the product; do not fabricate delivery, open, reply, or
-meeting events. - Treat activities as append-only. Corrections should
-use an explicit compensating event or documented administrative
-process. - Minimize and sanitize `details`; do not store secrets or
-unnecessary message content. - Deduplicate imported external events when
-Apollo supplies a stable external event ID.
+**Constraints**
+- `startupId`, `prospectId`, `activityType`, `summary`, and `occurredAt` are required.
+- Optional `campaignId` and `messageId`, and required `prospectId`, must belong to the same startup.
+- Store only observed provider events or real product/user actions. Do not fabricate delivery, open, reply, or meeting events.
+- Treat activities as append-only under normal operation.
+- Deduplicate imported provider events when a stable external activity ID is available.
+- Define allowed activity types centrally, for example `prospect_discovered`, `contact_enriched`, `score_updated`, `signal_detected`, `message_approved`, `sequence_added`, `message_sent`, `message_replied`, `meeting_opportunity`, `status_changed`, and `integration_error`.
 
-**Indexes** - `{ startupId: 1, occurredAt: -1 }`. -
-`{ startupId: 1, prospectId: 1, occurredAt: -1 }`. - Unique partial
-`{ startupId: 1, externalActivityId: 1 }` when the external ID is
-present and stable.
+**Indexes**
+- `{ startupId: 1, occurredAt: -1 }`
+- `{ startupId: 1, prospectId: 1, occurredAt: -1 }`
+- Unique partial: `{ startupId: 1, externalActivityId: 1 }` when the external ID exists and is stable.
 
-------------------------------------------------------------------------
+### 4.12 `nextBestActions`
 
-## 4.13 `nextBestActions`
+**Purpose:** AI-generated recommendations for the next useful sales action.
 
-**Purpose:** Store AI-generated action recommendations for founders.
-
-``` ts
+```ts
 {
   _id: ObjectId,
-  startupId: ObjectId,             // ref: startups
-  prospectId: ObjectId,            // ref: prospects
-  decisionMakerId?: ObjectId,      // ref: decisionMakers
-  campaignId?: ObjectId,            // ref: outreachCampaigns
-  actionType:
-    | "follow_up"
-    | "send_reply"
-    | "share_information"
-    | "book_meeting"
-    | "nurture"
-    | "stop_outreach"
-    | "review_prospect",
-  title: string,
-  explanation: string,
-  priority: "low" | "medium" | "high",
-  basedOnActivityIds: ObjectId[],
-  status: "pending" | "accepted" | "dismissed" | "completed" | "expired",
-  suggestedMessageId?: ObjectId,   // ref: outreachMessages
-  dueAt?: Date,
-  resolvedBy?: ObjectId,           // ref: users
-  resolvedAt?: Date,
+  startupId: ObjectId,        // required, ref: startups
+  prospectId: ObjectId,       // required, ref: prospects
+  actionType: string,          // required
+  title: string,               // required
+  priority: string,            // required
+  status: string,              // required
+  basedOnActivityIds?: ObjectId[],
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
-**Constraints** - `startupId`, `prospectId`, `actionType`, `title`,
-`explanation`, `priority`, `basedOnActivityIds`, and `status` are
-required. - `prospectId`, optional `decisionMakerId`, `campaignId`, and
-`suggestedMessageId` must belong to the same startup. - Every
-`basedOnActivityIds` item must reference an activity in the same
-startup. - Recommendations must explain the evidence or events that
-prompted them. - AI recommendations do not authorize outbound execution;
-the message approval and do-not-contact checks remain mandatory. - Set
-`resolvedAt` and `resolvedBy` when a user resolves an action, as
-appropriate.
+**Constraints**
+- `startupId`, `prospectId`, `actionType`, `title`, `priority`, and `status` are required.
+- `prospectId` must belong to the same startup.
+- Every ID in `basedOnActivityIds`, when supplied, must reference a `salesActivities` record in the same startup.
+- Define action types centrally, for example `follow_up`, `send_reply`, `share_information`, `book_meeting`, `nurture`, `stop_outreach`, and `review_prospect`.
+- Define priority values such as `low`, `medium`, and `high`, and status values such as `pending`, `accepted`, `dismissed`, `completed`, and `expired`.
+- Recommendations should be explainable from known data/activity. A recommendation must never bypass approval or do-not-contact checks.
 
-**Indexes** - `{ startupId: 1, status: 1, priority: -1 }`. -
-`{ startupId: 1, dueAt: 1 }`. -
-`{ startupId: 1, prospectId: 1, createdAt: -1 }`.
+**Indexes**
+- `{ startupId: 1, status: 1, priority: -1 }`
+- `{ startupId: 1, prospectId: 1, createdAt: -1 }`
 
-------------------------------------------------------------------------
+### 4.13 `usageRecords`
 
-## 4.14 `usageRecords`
+**Purpose:** Append usage events for Apollo and AI/LLM operations.
 
-**Purpose:** Append usage events for Apollo operations and LLM requests,
-supporting cost reporting and budget guardrails.
-
-``` ts
+```ts
 {
   _id: ObjectId,
-  startupId: ObjectId,             // ref: startups
-  provider: "apollo" | "llm",
-  operation: string,
-  status: "success" | "failed" | "blocked",
-  requestId?: string,
-  unitsConsumed?: number,
+  startupId: ObjectId,        // required, ref: startups
+  provider: string,            // required
+  operation: string,           // required
+  status: string,              // required
   creditsConsumed?: number,
-  inputTokens?: number,
-  outputTokens?: number,
   costAmount?: number,
-  currency?: string,
-  metadata?: {
-    prospectId?: ObjectId,
-    campaignId?: ObjectId,
-    errorCode?: string
-  },
-  occurredAt: Date,
+  occurredAt: Date,            // required
   createdAt: Date
 }
 ```
 
-**Constraints** - `startupId`, `provider`, `operation`, `status`, and
-`occurredAt` are required. - Numeric usage and cost fields, when
-present, must be non-negative. - `currency` must use a documented
-currency code when `costAmount` is present. - Distinguish estimated cost
-from provider-reported cost in metadata or a future explicit field; do
-not present estimates as exact charges. - Log blocked operations when
-budget/rate guardrails prevent a request. - Do not assume all Apollo
-endpoints report the same credit usage. Record provider-reported values
-when available and clearly distinguish unknown values. - Do not store
-credentials or full sensitive request/response bodies in metadata.
+**Constraints**
+- `startupId`, `provider`, `operation`, `status`, and `occurredAt` are required.
+- Provider values for the MVP should be restricted to the integrations actually used, initially Apollo and the configured LLM provider.
+- Define status values centrally, for example `success`, `failed`, and `blocked`.
+- `creditsConsumed` and `costAmount`, when present, must be non-negative.
+- Document the currency/unit for `costAmount`. Distinguish estimated cost from provider-reported cost; never present an estimate as an exact charge.
+- Record failed and budget-blocked operations where applicable.
+- Do not invent provider credit consumption when the provider does not expose it; represent unknown values as absent.
+- `usageRecords` is a ledger, not a budget lock. Before an expensive call, the backend must check and reserve available budget atomically or use another concurrency-safe mechanism.
 
-**Indexes** - `{ startupId: 1, occurredAt: -1 }`. -
-`{ startupId: 1, provider: 1, operation: 1, occurredAt: -1 }`. -
-Optional `{ startupId: 1, requestId: 1 }` when request IDs are
-available. Make this unique only if request ID semantics guarantee one
-record per request.
+**Indexes**
+- `{ startupId: 1, occurredAt: -1 }`
+- `{ startupId: 1, provider: 1, operation: 1, occurredAt: -1 }`
 
-------------------------------------------------------------------------
+---
 
 ## 5. Relationship model
 
 ### 5.1 Relationship summary
 
-  ----------------------------------------------------------------------------------------------------
-  Parent                Child / link          Cardinality       Relationship field
-  --------------------- --------------------- ----------------- --------------------------------------
-  `users`               `startups`            One user may own  `startups.ownerUserId`
-                                              multiple startups 
+| Parent | Child | Cardinality | Relationship field |
+|---|---|---|---|
+| `users` | `startups` | One user may own multiple startups | `startups.ownerUserId` |
+| `users` | `startupMembers` | One user may have many memberships | `startupMembers.userId` |
+| `startups` | `startupMembers` | One startup has many members | `startupMembers.startupId` |
+| `startups` | `icps` | One-to-many | `icps.startupId` |
+| `icps` | `prospects` | One-to-many in this schema | `prospects.icpId` |
+| `startups` | `prospects` | One-to-many | `prospects.startupId` |
+| `prospects` | `decisionMakers` | One-to-many | `decisionMakers.prospectId` |
+| `prospects` | `leadScores` | One-to-many score history | `leadScores.prospectId` |
+| `icps` | `leadScores` | One-to-many score history | `leadScores.icpId` |
+| `prospects` | `buyingSignals` | One-to-many | `buyingSignals.prospectId` |
+| `decisionMakers` | `buyingSignals` | One-to-many, optional signal reference | `buyingSignals.decisionMakerId` |
+| `icps` | `outreachCampaigns` | One-to-many | `outreachCampaigns.icpId` |
+| `outreachCampaigns` | `outreachMessages` | One-to-many | `outreachMessages.campaignId` |
+| `prospects` | `outreachMessages` | One-to-many | `outreachMessages.prospectId` |
+| `decisionMakers` | `outreachMessages` | One-to-many | `outreachMessages.decisionMakerId` |
+| `prospects` | `salesActivities` | One-to-many | `salesActivities.prospectId` |
+| `outreachCampaigns` | `salesActivities` | One-to-many, optional reference | `salesActivities.campaignId` |
+| `outreachMessages` | `salesActivities` | One-to-many, optional reference | `salesActivities.messageId` |
+| `prospects` | `nextBestActions` | One-to-many | `nextBestActions.prospectId` |
+| `salesActivities` | `nextBestActions` | Many activities may support an action | `nextBestActions.basedOnActivityIds` |
+| `startups` | `usageRecords` | One-to-many | `usageRecords.startupId` |
 
-  `users`               `startupMembers`      One user may have `startupMembers.userId`
-                                              many memberships  
-
-  `startups`            `startupMembers`      One startup has   `startupMembers.startupId`
-                                              many members      
-
-  `startups`            `integrations`        One Apollo        `integrations.startupId`
-                                              integration per   
-                                              startup in MVP    
-
-  `startups`            `icps`                One-to-many       `icps.startupId`
-
-  `icps`                `prospects`           One-to-many       `prospects.icpId`
-
-  `startups`            `prospects`           One-to-many       `prospects.startupId`
-
-  `prospects`           `decisionMakers`      One-to-many       `decisionMakers.prospectId`
-
-  `prospects`           `leadScores`          One-to-many score `leadScores.prospectId`
-                                              history           
-
-  `icps`                `leadScores`          One-to-many score `leadScores.icpId`
-                                              history           
-
-  `prospects`           `buyingSignals`       One-to-many       `buyingSignals.prospectId`
-
-  `icps`                `outreachCampaigns`   One-to-many       `outreachCampaigns.icpId`
-
-  `outreachCampaigns`   `outreachMessages`    One-to-many       `outreachMessages.campaignId`
-
-  `prospects`           `outreachMessages`    One-to-many       `outreachMessages.prospectId`
-
-  `decisionMakers`      `outreachMessages`    One-to-many       `outreachMessages.decisionMakerId`
-
-  Sales entities        `salesActivities`     Zero-to-many      Optional entity reference fields
-                                              events            
-
-  `prospects`           `nextBestActions`     One-to-many       `nextBestActions.prospectId`
-                                              recommendations   
-
-  `salesActivities`     `nextBestActions`     Many activities   `nextBestActions.basedOnActivityIds`
-                                              can support an    
-                                              action            
-
-  `startups`            `usageRecords`        One-to-many       `usageRecords.startupId`
-  ----------------------------------------------------------------------------------------------------
+Additional user references:
+- `icps.createdBy` → `users._id`
+- `outreachCampaigns.createdBy` and `approvedBy` → `users._id`
+- `outreachMessages.createdBy` and `approvedBy` → `users._id`
+- `startups.ownerUserId` → `users._id`
 
 ### 5.2 Mermaid ER diagram
 
-``` mermaid
+```mermaid
 erDiagram
     USERS ||--o{ STARTUPS : owns
     USERS ||--o{ STARTUP_MEMBERS : joins
     STARTUPS ||--o{ STARTUP_MEMBERS : has
-    STARTUPS ||--o{ INTEGRATIONS : connects
     STARTUPS ||--o{ ICPS : defines
     ICPS ||--o{ PROSPECTS : targets
     STARTUPS ||--o{ PROSPECTS : owns
@@ -922,202 +622,167 @@ erDiagram
     PROSPECTS ||--o{ LEAD_SCORES : receives
     ICPS ||--o{ LEAD_SCORES : evaluates
     PROSPECTS ||--o{ BUYING_SIGNALS : has
+    DECISION_MAKERS o|--o{ BUYING_SIGNALS : may_reference
     ICPS ||--o{ OUTREACH_CAMPAIGNS : informs
     OUTREACH_CAMPAIGNS ||--o{ OUTREACH_MESSAGES : contains
     PROSPECTS ||--o{ OUTREACH_MESSAGES : targets
     DECISION_MAKERS ||--o{ OUTREACH_MESSAGES : receives
     PROSPECTS ||--o{ SALES_ACTIVITIES : records
+    OUTREACH_CAMPAIGNS o|--o{ SALES_ACTIVITIES : relates_to
+    OUTREACH_MESSAGES o|--o{ SALES_ACTIVITIES : relates_to
     PROSPECTS ||--o{ NEXT_BEST_ACTIONS : suggests
     STARTUPS ||--o{ USAGE_RECORDS : consumes
 ```
 
-The diagram is a logical relationship view. MongoDB does not enforce
-these foreign-key relationships automatically.
+This is a logical relationship diagram. MongoDB does not automatically enforce these foreign-key relationships.
 
-------------------------------------------------------------------------
+---
 
 ## 6. Critical cross-document constraints
 
-Enforce these rules in service functions and tests, not just in Mongoose
-field declarations.
+Enforce these rules in service functions and tests, not only in field declarations:
 
-1.  **Tenant consistency:** every referenced document must have the same
-    `startupId` as the current operation.
-2.  **Membership authorization:** the user must have an active
-    membership for the startup; check the role for privileged
-    operations.
-3.  **Prospect--contact consistency:** an outreach message's
-    `decisionMakerId` must belong to its `prospectId`.
-4.  **ICP consistency:** a prospect, lead score, or campaign must
-    reference an ICP in the same startup.
-5.  **Campaign consistency:** an outreach message's campaign must belong
-    to the same startup, and its prospect/contact must be eligible for
-    that campaign.
-6.  **Signal consistency:** every buying signal must reference a
-    prospect in the same startup; an optional decision maker must belong
-    to that prospect.
-7.  **Action evidence:** each activity referenced by a next-best action
-    must belong to the same startup.
-8.  **Approval before execution:** validate current message approval,
-    campaign approval/state, tenant authorization, and do-not-contact
-    status immediately before calling Apollo.
-9.  **Duplicate external operations:** use idempotency keys or an
-    operation ledger where available; never assume a network timeout
-    means Apollo did not process a request.
-10. **Deletion behavior:** define explicit cleanup/retention behavior
-    for related records. Prefer archive/status transitions for sales
-    history unless deletion is required by policy or law.
+1. **Tenant consistency:** every referenced document must belong to the active startup.
+2. **Membership authorization:** only users with active membership may access workspace data; privileged operations require the appropriate role.
+3. **Owner consistency:** keep `startups.ownerUserId` and the owner's `startupMembers` role/status consistent.
+4. **Prospect–contact consistency:** an outreach message's `decisionMakerId` must belong to its `prospectId`.
+5. **ICP consistency:** a prospect, lead score, and campaign must reference an ICP in the same startup.
+6. **Campaign consistency:** an outreach message's campaign, prospect, and contact must be eligible for the same startup and campaign.
+7. **Signal consistency:** a buying signal's optional decision maker must belong to its prospect.
+8. **Action evidence:** every activity ID referenced by a next-best action must belong to the same startup.
+9. **Approval before execution:** re-check message approval, campaign state, membership authorization, and do-not-contact status immediately before any outbound action.
+10. **Idempotency and retries:** use the required message idempotency key and stable provider IDs where available. A timeout does not prove that Apollo failed to process a request; reconcile uncertain outcomes before retrying.
+11. **Usage limits:** usage records must be written consistently, and spend limits must be enforced with concurrency-safe backend logic.
+12. **Deletion and retention:** define cleanup/retention behavior for related records. Prefer status/archive transitions for sales history unless deletion is required by policy or law.
 
-------------------------------------------------------------------------
+---
 
-## 7. Data lifecycle and operational behavior
+## 7. Data lifecycle
 
-### 7.1 Prospect discovery and enrichment
+### 7.1 Prospect discovery and scoring
 
--   Search Apollo using translated ICP criteria.
--   Normalize and deduplicate company records.
--   Save discovered prospects with the originating `startupId` and
-    `icpId`.
--   Score available data before enriching contacts where possible.
--   Enrich only selected/high-priority records to control credit usage.
--   Update the prospect/contact's last-sync or last-enrichment
-    timestamps.
--   Preserve prior score history in `leadScores`.
+1. Translate the selected ICP criteria into supported Apollo search filters.
+2. Fetch and normalize company records.
+3. Deduplicate by `startupId` plus `apolloOrganizationId` when available; use normalized domain as a secondary matching aid.
+4. Create/update the prospect with its startup and ICP references.
+5. Score the prospect and insert a `leadScores` history record.
+6. Enrich selected contacts when needed and allowed by budget.
+7. Update relevant records' timestamps.
 
 ### 7.2 Buying signals
 
--   Create a signal only when available Apollo data or activity supports
-    it.
--   Save the supporting field/value evidence.
--   Do not treat a general company attribute as proof of purchase
-    intent.
--   If no signal is available, keep the signal list empty and continue
-    scoring based on other available factors.
--   Mark signals stale using a documented rule; do not silently rewrite
-    their evidence.
+1. Evaluate only available Apollo fields and supported activity data.
+2. Store the supporting evidence with each signal.
+3. Do not treat a generic company attribute as proof of purchase intent.
+4. If no supported signal exists, store no signal and continue scoring using other available criteria.
+5. Apply documented staleness rules and preserve dismissed status/evidence.
 
-### 7.3 Outreach and activities
+### 7.3 Outreach
 
--   Generate message drafts and persist them as pending approval.
--   Record who approved the message and when.
--   Before adding contacts to an Apollo sequence, re-check approval,
-    tenant ownership, campaign status, and do-not-contact flags.
--   Store external Apollo IDs when available.
--   Import only activity types the connected Apollo account and API
-    expose.
--   Deduplicate synchronized activity events.
--   Use `nextBestActions` for recommendations rather than embedding
-    recommendation history into a prospect.
+1. Generate and persist a draft in `outreachMessages`.
+2. Keep it pending until an authorized user approves it.
+3. Before queueing/sending, re-check approval, campaign state, tenant references, contact eligibility, and do-not-contact status.
+4. Execute only through the provider capability confirmed for the configured Apollo account.
+5. Persist external identifiers and observed statuses when available.
+6. Record supported events in `salesActivities` without fabricating delivery, open, reply, or meeting events.
+7. Prevent duplicate sends on retries using idempotency and reconciliation.
 
-### 7.4 Usage guardrails
+**Email-client boundary:** if the product's initial send action opens the user's email application with a `mailto:` link, that action is not equivalent to sending through Apollo. Record only the action the product can actually verify. Do not claim delivery or provider synchronization unless the relevant system confirms it.
 
--   Record usage for each relevant Apollo/LLM operation, including
-    failures and blocked requests.
--   Check applicable plan/budget limits before expensive operations.
--   Treat usage records as an operational ledger; corrections should be
-    explicit rather than silently overwriting historical usage.
--   If exact provider usage/cost is unavailable, store `null` or an
-    explicitly labeled estimate rather than inventing a value.
+### 7.4 Usage and spend guardrails
 
-------------------------------------------------------------------------
+1. Record relevant Apollo/LLM operations, including failures and blocked operations where applicable.
+2. Check the workspace plan and spend cap before expensive operations.
+3. Reserve/authorize budget atomically before making concurrent paid requests.
+4. Reconcile estimated and provider-reported usage when available.
+5. If exact cost/credit data is unavailable, leave it absent or label it as an estimate rather than inventing a value.
+
+---
 
 ## 8. Security and privacy requirements
 
--   Hash passwords with bcrypt using appropriate configuration.
--   Encrypt Apollo access/refresh tokens at rest; keep encryption keys
-    outside the database.
--   Never expose Apollo credentials to the frontend or logs.
--   Apply JWT authentication and startup membership authorization to
-    protected endpoints.
--   Use least-privilege Apollo scopes and customer-authorized
-    connections.
--   Minimize stored contact information and restrict access to it.
--   Sanitize error logs and AI/provider payloads.
--   Implement rate limits, timeouts, bounded retries with backoff, and
-    idempotent handling for external operations.
--   Provide a reliable disconnect process for Apollo and prevent future
-    requests after disconnection.
--   Verify the commercial terms and permissions for the intended
-    multi-tenant use of Apollo data before customer-facing launch.
+- Hash passwords with a suitable password-hashing configuration.
+- Keep Apollo and LLM credentials on the backend, outside source control, and never expose them to React clients.
+- Use the configured environment secret for Apollo only on the server if that is the chosen MVP integration model. Do not store an integration token in these collections unless the product later adopts per-startup account connections.
+- Apply authentication and startup membership authorization to protected endpoints.
+- Use least-privilege provider permissions and verify the intended API operations are available.
+- Minimize stored contact data and restrict access to it.
+- Sanitize provider/AI errors and never log secrets or sensitive headers.
+- Apply rate limits, timeouts, bounded retries with backoff, and idempotent handling for external operations.
+- Keep `criteria`, `evidence`, and any other flexible objects schema-validated and size-bounded.
+- Verify Apollo's current API access, sequence/activity capabilities, and commercial terms before customer-facing launch.
 
-------------------------------------------------------------------------
+---
 
-## 9. Implementation and test checklist
+## 9. Implementation checklist
 
-### Schema and indexes
+### Schemas and indexes
 
--   [ ] Create all 14 Mongoose models.
--   [ ] Add enums, required fields, field bounds, defaults, and
-    timestamps.
--   [ ] Add the indexes specified in this document.
--   [ ] Test partial unique indexes for missing/empty Apollo IDs.
--   [ ] Add schema validation for all score and usage numeric ranges.
+- [ ] Create the 13 Mongoose models listed in the collection inventory.
+- [ ] Add enums, required fields, defaults, bounds, and timestamps.
+- [ ] Add the indexes specified in this document.
+- [ ] Test optional external-ID partial unique indexes.
+- [ ] Enforce score, confidence, and usage numeric ranges.
+- [ ] Enforce unique `{ startupId, userId }` membership and unique `{ startupId, idempotencyKey }` message keys.
 
 ### Tenant security
 
--   [ ] A user from Startup A cannot read Startup B's prospects.
--   [ ] A user from Startup A cannot update or delete Startup B's
-    records.
--   [ ] Cross-tenant references are rejected.
--   [ ] An inactive member cannot access workspace data.
--   [ ] Only authorized roles can connect Apollo or approve
-    campaigns/messages.
+- [ ] A user in Startup A cannot read, update, or delete Startup B's records.
+- [ ] Cross-tenant references are rejected.
+- [ ] Inactive members cannot access workspace data.
+- [ ] Only authorized roles can perform privileged actions and approvals.
+- [ ] Owner and membership records remain consistent.
 
-### Apollo integration
+### Apollo and AI operations
 
--   [ ] Tokens are encrypted and never returned by API handlers.
--   [ ] Duplicate company/contact imports are suppressed.
--   [ ] Enrichment is performed only after prioritization/selection.
--   [ ] API failures, rate limits, retries, and usage are recorded.
--   [ ] External sequence/activity IDs are persisted when available.
+- [ ] Credentials are server-only and never returned by API handlers.
+- [ ] Duplicate company/contact imports are suppressed.
+- [ ] Enrichment and LLM calls are gated by usage/budget checks.
+- [ ] Provider failures, rate limits, and uncertain outcomes are handled safely.
+- [ ] External IDs are persisted when actually returned and supported.
+- [ ] Buying signals include evidence and are not fabricated.
 
 ### Outreach safety
 
--   [ ] A message cannot be queued/sent without valid approval.
--   [ ] A do-not-contact prospect/contact cannot enter outbound
-    execution.
--   [ ] Retry after timeout does not create unintended duplicate
-    actions.
--   [ ] Activity synchronization does not duplicate the same external
-    event.
--   [ ] AI recommendations never bypass the approval checks.
+- [ ] A message cannot be queued/sent without valid approval.
+- [ ] A do-not-contact prospect/contact cannot enter outbound execution.
+- [ ] Retry after timeout does not blindly duplicate an external action.
+- [ ] Imported activities are deduplicated where stable IDs exist.
+- [ ] AI recommendations never bypass approval or authorization checks.
+- [ ] `mailto:` handoff is not misrepresented as confirmed sending or delivery.
 
-------------------------------------------------------------------------
+### Usage limits
 
-## 10. Explicitly out of scope for this MVP
+- [ ] Every relevant provider operation is recorded.
+- [ ] Budget is checked before paid operations.
+- [ ] Concurrent requests cannot bypass the spend cap.
+- [ ] Estimates are distinguishable from provider-reported usage/cost.
 
-The following are not separate collections in this baseline:
+---
 
--   Separate `leads` collection.
--   Separate `replies` collection.
--   Separate external news, hiring, website-monitoring, or
-    technology-signal providers.
--   Separate subscription/payment ledger.
--   Separate calendar/meeting collection.
--   Separate generic audit-log collection.
+## 10. Explicitly out of scope
 
-If later requirements need independent billing reconciliation, calendar
-synchronization, long-lived job execution, detailed security audit
-trails, or additional signal providers, add collections deliberately
-rather than expanding these documents without a clear contract.
+The following are not separate collections in this MVP baseline:
 
-------------------------------------------------------------------------
+- Separate `integrations` collection (the initial model uses backend-configured provider credentials rather than per-startup credential storage).
+- Separate `leads` collection.
+- Separate `replies` collection.
+- Separate buying-signal provider collections.
+- Separate subscription/payment ledger.
+- Separate calendar/meeting collection.
+- Separate generic audit-log collection.
+- Separate durable integration-operation/job ledger.
+
+Add these only when product requirements justify them. If the product later needs customer-specific Apollo OAuth connections, add an `integrations` collection rather than storing customer tokens in unrelated documents. If robust background retries and operation reconciliation become necessary, consider a durable operation/job collection.
+
+---
 
 ## 11. Final decision
 
-The MVP database consists of **14 collections**:
+The MVP database baseline consists of **13 collections**:
 
-`users`, `startups`, `startupMembers`, `integrations`, `icps`,
-`prospects`, `decisionMakers`, `leadScores`, `buyingSignals`,
-`outreachCampaigns`, `outreachMessages`, `salesActivities`,
-`nextBestActions`, and `usageRecords`.
+`users`, `startups`, `startupMembers`, `icps`, `prospects`, `decisionMakers`, `leadScores`, `buyingSignals`, `outreachCampaigns`, `outreachMessages`, `salesActivities`, `nextBestActions`, and `usageRecords`.
 
-The non-negotiable design constraints are strict tenant isolation,
-same-tenant reference validation, evidence-backed intelligence,
-Apollo-only external sales data for this phase, usage tracking,
-duplicate suppression, and founder approval before outbound execution.
+The non-negotiable requirements are strict tenant isolation, same-tenant reference validation, evidence-backed intelligence, Apollo-only external sales data for this phase, usage tracking and spend enforcement, duplicate suppression, and human approval before outbound execution.
 
-This document defines the logical database contract. Before release,
-verify actual Apollo fields, OAuth scopes, API access, sequence/activity
-capabilities, and commercial permissions against the connected account
-and current Apollo terms.
+This document defines the logical database contract. Before release, verify actual Apollo fields, API permissions, sequence/activity capabilities, and commercial permissions for the chosen backend integration model.
