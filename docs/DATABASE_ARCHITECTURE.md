@@ -1,7 +1,7 @@
-# AI Founder OS — Database Architecture
+# BlueCode OS — Database Architecture
 
 **Document:** `DATABASE_ARCHITECTURE.md`  
-**Product:** AI Founder OS — AI Sales Copilot  
+**Product:** BlueCode OS 
 **Database:** MongoDB  
 **ODM:** Mongoose  
 **Architecture:** Multi-tenant MERN SaaS  
@@ -638,7 +638,7 @@ This is a logical relationship diagram. MongoDB does not automatically enforce t
 
 ---
 
-## 6. Critical cross-document constraints
+## 6. Critical cross-document constraintsF
 
 Enforce these rules in service functions and tests, not only in field declarations:
 
