@@ -1,0 +1,145 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AI Founder OS - Sales Copilot API",
+    "description": "Multi-tenant REST microservice API specification for AI Founder OS Sales Copilot.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000/api/v1",
+      "description": "Local Development Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "responses": {
+          "200": {
+            "description": "System UP status"
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "summary": "Register Startup Workspace Tenant",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "company_name": { "type": "string" },
+                  "email": { "type": "string" },
+                  "password": { "type": "string" },
+                  "plan": { "type": "string" }
+                },
+                "required": ["company_name", "email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registered successfully"
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Authenticate User & Get JWT Token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" },
+                  "password": { "type": "string" }
+                },
+                "required": ["email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "JWT Token issued"
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "summary": "Get Authenticated User Profile",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Profile details"
+          }
+        }
+      }
+    },
+    "/icp": {
+      "post": {
+        "summary": "Save/Update ICP Config",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "ICP updated" } }
+      },
+      "get": {
+        "summary": "Get Active ICP Config",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "ICP config" } }
+      }
+    },
+    "/prospects/search": {
+      "post": {
+        "summary": "Search Prospects & DMs",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Prospect search results" } }
+      }
+    },
+    "/leads/score": {
+      "post": {
+        "summary": "Score Leads using AI",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Scored leads list" } }
+      }
+    },
+    "/outreach/generate": {
+      "post": {
+        "summary": "Generate Cold Email & Apollo DM",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Generated outreach content" } }
+      }
+    },
+    "/dashboard/metrics": {
+      "get": {
+        "summary": "Get Daily Sales Dashboard Metrics",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Dashboard metrics" } }
+      }
+    },
+    "/usage": {
+      "get": {
+        "summary": "Get Usage & Spend Cap Limits",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Usage tracker data" } }
+      }
+    }
+  }
+}

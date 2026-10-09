@@ -1,0 +1,504 @@
+{
+  "info": {
+    "_postman_id": "a8f2e690-3b1a-4c22-921d-789a6b100234",
+    "name": "AI Founder OS - Sales Copilot API",
+    "description": "Postman Collection for AI Founder OS - Sales Copilot multi-tenant backend API microservices.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "System Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        },
+        "description": "Returns operational health status of the API server."
+      }
+    },
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register Startup Tenant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_name\": \"ABC Tech Solutions\",\n  \"email\": \"founder@abctech.com\",\n  \"password\": \"SecurePassword123!\",\n  \"plan\": \"free_trial\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.token) {",
+                  "    pm.collectionVariables.set('token', jsonData.data.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"founder@abctech.com\",\n  \"password\": \"SecurePassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Get Auth Profile (/me)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "me"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Module 1 - ICP Builder",
+      "item": [
+        {
+          "name": "Configure ICP",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"industry\": \"Indian B2B Software\",\n  \"headcount_min\": 50,\n  \"headcount_max\": 500,\n  \"target_roles\": [\"Founder\", \"CEO\", \"HR Head\", \"CTO\"],\n  \"exclusions\": [\"Consulting\", \"Agency\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/icp",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "icp"]
+            }
+          }
+        },
+        {
+          "name": "Get Active ICP",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/icp",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "icp"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Module 2 - Prospect & DM Finder",
+      "item": [
+        {
+          "name": "Search Prospects & Decision Makers",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limit\": 25,\n  \"enrich_decision_makers\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/prospects/search",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "prospects", "search"]
+            }
+          }
+        },
+        {
+          "name": "Get Saved Prospects",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/prospects",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "prospects"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Module 3 - AI Lead Scoring",
+      "item": [
+        {
+          "name": "Score Prospects with AI",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prospect_ids\": [\"prsp_101\", \"prsp_102\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leads/score",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "leads", "score"]
+            }
+          }
+        },
+        {
+          "name": "Get Ranked Leads",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leads?category=Hot",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "leads"],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "Hot"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Module 4 - Outreach Generator",
+      "item": [
+        {
+          "name": "Generate Cold Email & Apollo DM",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lead_id\": \"lead_301\",\n  \"dm_id\": \"dm_501\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/outreach/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "outreach", "generate"]
+            }
+          }
+        },
+        {
+          "name": "Dispatch Outreach Message",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"msg_id\": \"msg_801\",\n  \"channel\": \"email\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/outreach/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "outreach", "send"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Module 5 - Follow-up Assistant",
+      "item": [
+        {
+          "name": "Get Pending Follow-ups",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/followups/pending",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "followups", "pending"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Module 6 - Auto-Scheduling",
+      "item": [
+        {
+          "name": "Schedule Meeting Link",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dm_id\": \"dm_501\",\n  \"booking_link\": \"https://calendly.com/founder-abctech/30min\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/meetings/schedule",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "meetings", "schedule"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Module 7 - Dashboard & Usage",
+      "item": [
+        {
+          "name": "Get Dashboard Metrics",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "metrics"]
+            }
+          }
+        },
+        {
+          "name": "Get Usage & Spend Cap",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Settings & Integrations",
+      "item": [
+        {
+          "name": "Get Connected Integrations Status",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/settings/integrations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "settings", "integrations"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
