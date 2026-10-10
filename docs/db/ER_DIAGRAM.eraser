@@ -1,0 +1,235 @@
+users [icon: user, color: blue] {
+  _id ObjectId pk
+  name string required
+  email string required unique
+  passwordHash string required
+  status string required
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+startups [icon: building-2, color: blue] {
+  _id ObjectId pk
+  ownerUserId ObjectId required
+  name string required
+  plan string required
+  status string required
+  trialEndsAt timestamp
+  apiSpendCap number required
+  spendCommitted number required
+  spendReserved number required
+  settings object
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+startupMembers [icon: users, color: blue] {
+  _id ObjectId pk
+  startupId ObjectId required
+  userId ObjectId required
+  role string required
+  status string required
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+icps [icon: target, color: purple] {
+  _id ObjectId pk
+  startupId ObjectId required
+  name string required
+  criteria object required
+  criteriaVersion number required
+  isActive boolean required
+  createdBy ObjectId required
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+prospects [icon: building, color: green] {
+  _id ObjectId pk
+  startupId ObjectId required
+  icpId ObjectId required
+  apolloOrganizationId string
+  name string required
+  domain string
+  status string required
+  firmographics object
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+decisionMakers [icon: contact, color: green] {
+  _id ObjectId pk
+  startupId ObjectId required
+  prospectId ObjectId required
+  apolloPersonId string
+  fullName string required
+  jobTitle string
+  businessEmail string
+  linkedinUrl string
+  emailVerified boolean
+  source string required
+  outreachStatus string required
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+leadScores [icon: chart-no-axes-combined, color: purple] {
+  _id ObjectId pk
+  startupId ObjectId required
+  prospectId ObjectId required
+  icpId ObjectId required
+  score number required
+  category string required
+  coverage number required
+  breakdown object required
+  explanation string
+  explanationSource string required
+  scoringVersion string required
+  icpVersion number required
+  scoredAt timestamp required
+  createdAt timestamp
+}
+
+buyingSignals [icon: activity, color: purple] {
+  _id ObjectId pk
+  startupId ObjectId required
+  prospectId ObjectId required
+  decisionMakerId ObjectId
+  signalType string required
+  description string required
+  evidence object[] required
+  confidence number required
+  status string required
+  detectedAt timestamp required
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+outreachCampaigns [icon: send, color: orange] {
+  _id ObjectId pk
+  startupId ObjectId required
+  icpId ObjectId required
+  name string required
+  channel string required
+  status string required
+  createdBy ObjectId required
+  approvedBy ObjectId
+  approvedAt timestamp
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+outreachMessages [icon: mail, color: orange] {
+  _id ObjectId pk
+  startupId ObjectId required
+  campaignId ObjectId required
+  prospectId ObjectId required
+  decisionMakerId ObjectId required
+  step number required
+  revision number required
+  subject string
+  body string required
+  approvalStatus string required
+  approvedBy ObjectId
+  approvedAt timestamp
+  status string required
+  idempotencyKey string required
+  sentAt timestamp
+  createdBy ObjectId required
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+salesActivities [icon: history, color: yellow] {
+  _id ObjectId pk
+  startupId ObjectId required
+  prospectId ObjectId required
+  campaignId ObjectId
+  messageId ObjectId
+  activityType string required
+  summary string required
+  classification object
+  metadata object
+  occurredAt timestamp required
+  createdAt timestamp
+}
+
+nextBestActions [icon: list-checks, color: purple] {
+  _id ObjectId pk
+  startupId ObjectId required
+  prospectId ObjectId required
+  decisionMakerId ObjectId
+  actionType string required
+  title string required
+  reason string required
+  priority string required
+  status string required
+  dueAt timestamp
+  expiresAt timestamp
+  basedOnActivityIds ObjectId[]
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+usageRecords [icon: gauge, color: gray] {
+  _id ObjectId pk
+  startupId ObjectId required
+  provider string required
+  operation string required
+  status string required
+  creditsConsumed number
+  costAmount number
+  costType string required
+  errorCode string
+  requestId string
+  entityRef object
+  occurredAt timestamp required
+  createdAt timestamp
+}
+
+users._id < startups.ownerUserId
+
+users._id <> startupMembers.userId
+startups._id <> startupMembers.startupId
+
+startups._id <> icps.startupId
+users._id < icps.createdBy
+
+startups._id <> prospects.startupId
+icps._id < prospects.icpId
+
+startups._id <> decisionMakers.startupId
+prospects._id < decisionMakers.prospectId
+
+startups._id <> leadScores.startupId
+prospects._id < leadScores.prospectId
+icps._id < leadScores.icpId
+
+startups._id <> buyingSignals.startupId
+prospects._id < buyingSignals.prospectId
+decisionMakers._id < buyingSignals.decisionMakerId
+
+startups._id <> outreachCampaigns.startupId
+icps._id < outreachCampaigns.icpId
+users._id < outreachCampaigns.createdBy
+users._id < outreachCampaigns.approvedBy
+
+startups._id <> outreachMessages.startupId
+outreachCampaigns._id < outreachMessages.campaignId
+prospects._id < outreachMessages.prospectId
+decisionMakers._id < outreachMessages.decisionMakerId
+users._id < outreachMessages.createdBy
+users._id < outreachMessages.approvedBy
+
+startups._id <> salesActivities.startupId
+prospects._id < salesActivities.prospectId
+outreachCampaigns._id < salesActivities.campaignId
+outreachMessages._id < salesActivities.messageId
+
+startups._id <> nextBestActions.startupId
+prospects._id < nextBestActions.prospectId
+decisionMakers._id < nextBestActions.decisionMakerId
+salesActivities._id <> nextBestActions.basedOnActivityIds
+
+startups._id <> usageRecords.startupId

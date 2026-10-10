@@ -1,7 +1,7 @@
 # BlueCode OS — API Contract v1.0
 
 **Document:** `API_CONTRACT.md`
-**Depends on:** `BACKEND_ARCHITECTURE.md` v2 (modules, permissions, error registry), `DB_ARCHITECTURE.md` + `DB_AMENDMENTS.md` (fields, enums)
+**Depends on:** `BACKEND_ARCHITECTURE.md` v2 (modules, permissions, error registry), `DB_ARCHITECTURE.md` v2.0 (fields, enums)
 **Consumers:** `server/` (validators, controllers, contract tests) and `client/` (API layer, error handling)
 **Base path:** `/api/v1`
 **Status:** Draft for review. Once approved, backend Zod validators and frontend types are generated from this file; changes here come first.
@@ -93,6 +93,8 @@ User        { id, name, email, status, createdAt }
 Membership  { startupId, startupName, role, status }
 Startup     { id, name, plan, status, trialEndsAt?, settings: Settings,
               spend: { capPaise, committedPaise, reservedPaise, remainingPaise },
+              me: { role, permissions: string[] },                          // only on GET /startups/current
+              capabilities: { searchOrgs, searchPeople, enrich: boolean },  // only on GET /startups/current
               createdAt }
 Settings    { calendarLink?, senderName?, senderTitle?, productSummary? }
 Member      { id, userId, name, email, role, status }
@@ -119,7 +121,7 @@ Contact     { id, prospectId, fullName, jobTitle?, businessEmail?, linkedinUrl?,
               emailVerified?, outreachStatus, source /*apollo|manual*/, createdAt }
 
 Campaign    { id, icpId, name, channel /*email*/, status, approvedBy?, approvedAt?, createdBy, createdAt }
-Message     { id, campaignId, prospectId, decisionMakerId, step, subject?, body,
+Message     { id, campaignId, prospectId, decisionMakerId, step, revision, subject?, body,
               approvalStatus, status, approvedBy?, approvedAt?, sentAt?, createdBy, createdAt, updatedAt }
 
 Activity    { id, prospectId, campaignId?, messageId?, activityType, summary, occurredAt,
@@ -128,7 +130,7 @@ NextAction  { id, prospectId, decisionMakerId?, actionType, title, reason, prior
               status, dueAt?, expiresAt?, basedOnActivityIds?[], createdAt }
 ```
 
-**Enums** are defined in `DB_AMENDMENTS.md §2`. Values marked *(reserved)* there are never returned in the MVP.
+**Enums** are defined in `DB_ARCHITECTURE.md §4` and contain MVP values only. Derived read-time values: signal `stale`, next-action `expired`.
 
 ---
 
@@ -190,6 +192,8 @@ Errors: `401 UNAUTHENTICATED` (same response for unknown email and wrong passwor
 
 `POST /startups` request: `{ "name": string(1–80) }` → `201 { data: Startup }`
 `PATCH /startups/current` request (all optional): `{ "name", "settings": { "calendarLink": url, "senderName", "senderTitle", "productSummary": string(≤1000) } }`
+`GET /startups/current` also returns `me` (the caller's role and the permission keys granted by the server's permission matrix) and `capabilities` (which Apollo features are enabled in this deployment). Clients use them to enable/disable controls and show "not available" states; the server still enforces everything.
+
 Invite request: `{ "email": email, "role": "admin"|"member" }` → `201 { data: Member }` (`status:'invited'`). A user with no account yet returns `422` ("no account for this email").
 
 ---
@@ -247,6 +251,7 @@ Limits: `productDescription` 20–2000 chars.
 - `items` contains the created and `alsoMatchesIcp` prospects (with `latestScore` for the searched ICP).
 
 Errors: `404` (ICP), `409 INVALID_STATE` (ICP archived), `503 CAPABILITY_DISABLED`, `402`, `502`, `429`.
+When `search_orgs` is disabled, discovery is unavailable: there is no manual company import in the MVP. Mock mode is for dev/demo only.
 
 ### `GET /prospects`
 Query: `icpId` (origin ICP), `scoredAgainstIcpId`, `status`, `category` (comma list), `minScore`, `q` (name/domain prefix), `includeLow` (default `false`: hides category `low`), `sort` ∈ `score|-score|createdAt|-createdAt|name`, `page`, `limit`.
@@ -298,7 +303,7 @@ Query: `icpId` (origin ICP), `scoredAgainstIcpId`, `status`, `category` (comma l
 | `POST /signals/:id/dismiss` | `prospect:score` | Keeps evidence |
 
 `POST …/signals/detect` → `200 { data: { created: n, signals: Signal[], message?: "No signals found in available data" } }`
-Every `Signal` has ≥ 1 `evidence` item. `interpret` rejects (`502 PROVIDER_FAILED`) any LLM output referencing evidence not in stored data.
+Every `Signal` has ≥ 1 `evidence` item `{ field, value }`. `field` is a path from the evidence allowlist (e.g. `firmographics.employeeCount`) and `value` is copied from stored data at detection time. `interpret` rejects (`502 PROVIDER_FAILED`) any model output whose `evidenceFields` are not present in the prospect's stored data.
 
 ---
 
@@ -335,7 +340,7 @@ Every `Signal` has ≥ 1 `evidence` item. `interpret` rejects (`502 PROVIDER_FAI
 | `POST /campaigns/:id/cancel` | `campaign:approve` | Any non-terminal → `cancelled`; cancels unsent drafts |
 
 All state actions return `200 { data: Campaign }` or `409 INVALID_STATE`.
-A campaign becomes `active` automatically the first time one of its messages is handed off.
+`active` is a product-side label set automatically the first time one of the campaign's messages is handed off. It does **not** mean a sequence is running; nothing sends or schedules follow-ups. `paused` blocks new drafts and handoffs.
 
 ---
 
@@ -362,7 +367,8 @@ A campaign becomes `active` automatically the first time one of its messages is 
 ```
 - Preconditions: campaign not terminal; contact belongs to a prospect in this startup; prospect and contact not DNC (`409 DO_NOT_CONTACT`); contact has `businessEmail` (`422`, "add or enrich an email first").
 - `201 { data: Message }` for a new draft (`approvalStatus:'pending'`, `status:'draft'`).
-- **Idempotent:** the same `(campaignId, decisionMakerId, step)` returns the existing draft with `200`. `regenerate:true` makes a new AI version, only while `approvalStatus != 'approved'`; otherwise `409 INVALID_STATE`.
+- **Idempotent:** the same `(campaignId, decisionMakerId, step)` returns the existing draft with `200` (same `id`). `regenerate:true` rewrites **the same message** in place (`revision` +1, approval reset to `pending`/`draft`), only while `approvalStatus != 'approved'`; otherwise `409 INVALID_STATE`.
+- **Concurrent identical requests** produce one message and one LLM call; the later request receives the same message with `200`.
 - The draft never claims facts absent from stored data; if no active signal exists, it does not mention one.
 
 `GET /messages` query: `campaignId`, `prospectId`, `decisionMakerId`, `approvalStatus`, `status`, `sort` ∈ `createdAt|-createdAt`.
@@ -422,7 +428,7 @@ Only from `handed_off` → `user_reported_sent`; sets `sentAt`; records `message
 
 `GET /next-actions` query: `status` (default `pending`), `prospectId`, `sort` ∈ `priority` (default: high first, then `dueAt`).
 Items past `expiresAt` are returned as `expired`. The refresh uses rules and templated wording only; LLM wording is best-effort and falls back to a template when budget is blocked, so this endpoint never fails with `BUDGET_EXHAUSTED`.
-Accepting an action performs **no** outbound operation; it returns `{ data: NextAction, "next": { "route": "/messages/…" } }` as a UI hint only.
+Actions are recommendations computed when the page is opened: the system does not send follow-ups, watch for missing replies, or book meetings. Accepting an action performs **no** outbound operation; it returns `{ data: NextAction, "next": { "route": "/messages/…" } }` as a UI hint only.
 
 ---
 
@@ -453,7 +459,7 @@ Query: `provider` (`apollo|llm`), `operation`, `status`, `from`, `to`, `page`, `
             "topActions": [ NextAction ],
             "usage": { "remainingPaise": 21400, "trialDaysLeft": 11 } } }
 ```
-Funnel stages count only events the system actually recorded; there are no delivery/open metrics.
+Funnel stages count only events the system recorded; `userReportedSent` is the founder's claim, and `repliesLogged` counts replies the founder pasted. There are no delivery, open, or inbox metrics.
 
 ---
 
@@ -512,7 +518,8 @@ Funnel stages count only events the system actually recorded; there are no deliv
 - Every change updates this file, the Zod validators, and the contract tests in one PR, with a `DECISIONS.md` entry if it changes behaviour.
 
 ## 21. Open items
-1. Confirm status code `402` for plan/budget limits (changing to `429` is a one-line change in §1.5 and the error registry).
-2. Confirm the invite flow (existing users only) is acceptable for the pilot.
-3. After approval: generate `openapi.yaml` from this file and derive Zod validators from it.
-4. `AI_SERVICE_DESIGN.md` must define the exact outputs behind `propose`, `draft`, `explain`, `interpret`, and `classify`.
+1. Freeze the trial spend cap (`TRIAL_SPEND_CAP_PAISE`); the UI, tests, and contract examples (`25000` paise) must follow the frozen value.
+2. Confirm status code `402` for plan/budget limits (changing to `429` is a one-line change in §1.5 and the error registry).
+3. Confirm the invite flow (existing users only) is acceptable for the pilot.
+4. After approval: generate `openapi.yaml` from this file and derive Zod validators from it.
+5. `AI_SERVICE_DESIGN.md` must define the exact outputs behind `propose`, `draft`, `explain`, `interpret`, and `classify`.

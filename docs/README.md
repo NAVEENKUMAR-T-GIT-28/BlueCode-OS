@@ -2,33 +2,39 @@
 
 **Stack:** MERN monolith · Apollo.io (data) · configurable LLM (intelligence)
 **MVP execution model:** draft-first, founder approves, `mailto:` handoff (see `DECISIONS.md` D2)
-**Rule:** each doc may depend only on docs above it. Approved schema = `DB_ARCHITECTURE.md` + `DB_AMENDMENTS.md`.
+**Rule:** each doc may depend only on docs above it. **Single schema source: `DB_ARCHITECTURE.md` v2.0** (amendments merged).
 
 | # | File | Purpose | Status |
 |--:|---|---|---|
 | 0 | `README.md` | Map, reading order, status | Done |
-| 1 | `DB_ARCHITECTURE.md` | 13 collections, indexes, tenant rules | Done; fold in amendments after approval |
-| 1a | `DB_AMENDMENTS.md` | Adopt/Defer register of schema changes, enum registry, index checklist | **Needs approval** |
-| 2 | `BACKEND_ARCHITECTURE.md` | Modules, services, pipeline, budget, state machines, tests (**v2**) | Revised after review |
+| 1 | `DB_ARCHITECTURE.md` | 13 collections, enums, indexes, tenant rules, lifecycle (**v2.0 detailed**) | Authoritative |
+| 1b | `db/ER_DIAGRAM.eraser` | ER diagram source, kept in sync with the schema | Authoritative |
+| 1a | `DB_AMENDMENTS.md` | Change register and rationale (A1–A29) | Historical; do not code from it |
+| 2 | `BACKEND_ARCHITECTURE.md` | Modules, services, pipeline, budget, state machines, tests (v2) | Reconciled with DB v2 |
 | 2a | `APOLLO_INTEGRATION.md` | Capability matrix, verification procedure, licensing questions | **Needs data from Apollo account** |
-| 3 | `API_CONTRACT.md` | Every endpoint under `/api/v1`, DTOs, errors, permissions | **Draft for review** |
-| 4 | `AI_SERVICE_DESIGN.md` | Prompts, JSON schemas, cost per task | **Next** |
-| 5 | `FRONTEND_ARCHITECTURE.md` | Routes, pages, components, data fetching, UX states | Planned |
-| 6 | `SECURITY_AND_TESTING.md` | Threat checklist, tenant-isolation test matrix | Planned |
+| 3 | `API_CONTRACT.md` | Every endpoint under `/api/v1`, DTOs, errors, permissions | Draft; freezes after the trial cap is set |
+| 4 | `AI_SERVICE_DESIGN.md` | Six LLM tasks: prompts, output schemas, validators, runtime, cost model, tests | Draft for review |
+| 5 | `FRONTEND_ARCHITECTURE.md` | Routes, pages, flows, data fetching, UX states, honest wording, mailto handoff | Draft for review |
+| 6 | `SECURITY_AND_TESTING.md` | Threat checklist, tenant-isolation test matrix | **Next** |
 | 7 | `DEPLOYMENT_AND_OPS.md` | Env vars, VPS, Mongo replica set, logging, backups | Planned |
-| 8 | `DECISIONS.md` | Decision log (D1–D13) | Living |
+| 8 | `DECISIONS.md` | Decision log (D1–D19) | Living |
 
-## Blockers before coding starts
-1. Product owner confirms D2 (mailto-only MVP).
-2. DB owner approves `DB_AMENDMENTS.md`.
-3. Apollo capabilities 1–3 verified and recorded; commercial questions C1–C3 answered or pilot limited to consenting founders / mock mode.
+## Frozen
+- D2: draft → approval → `mailto:` handoff; no server-side sending (Accepted / Frozen).
+- 13 collections; modular monolith; no scheduled jobs; shared Apollo key only in server `.env`.
 
-M1 (foundation) in `BACKEND_ARCHITECTURE.md §17` does not depend on blockers 1 and 3 and can start once 2 is approved.
+## Open before freezing the API contract and generating code
+1. **Trial spend cap (D5):** ₹250 (current default) or ₹1,000? One config value, used by backend, API, UI, and tests.
+2. **Apollo verification:** capabilities 1–3 (`search_orgs`, `search_people`, `enrich`) verified with evidence. Until then discovery is unavailable in live mode (mock mode only). Commercial questions C1–C3 answered before any non-founder customer uses live Apollo data.
+3. **Tests to implement** (not just plan): tenant isolation, budget concurrency, draft concurrency, approval reset, do-not-contact.
+
+M1 (foundation) in `BACKEND_ARCHITECTURE.md §17` can start now.
 
 ## Repo layout
 ```
 bluecode-os/
 ├── docs/       # this folder
+├── shared/     # enums + DTO types (FRONTEND_ARCHITECTURE §3)
 ├── server/     # see BACKEND_ARCHITECTURE §4
 └── client/     # see FRONTEND_ARCHITECTURE
 ```
