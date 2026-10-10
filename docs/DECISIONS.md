@@ -31,3 +31,6 @@ One row per decision. Never delete rows; supersede them. Dates are ISO.
 | D25 | 2026-10-10 | `shared/` package holds enums and DTO types for client and server | Proposed | Prevents enum and contract drift | Separate repos |
 | D26 | 2026-10-10 | `GET /startups/current` returns `me.permissions` and `capabilities` so the client never duplicates the permission matrix | Accepted (API-1) | Single source of truth; avoids discovering disabled features by error | n/a |
 | D27 | 2026-10-10 | No optimistic updates for paid, approval, or state-changing actions | Accepted | Server is source of truth | n/a |
+| D28 | 2026-10-10 | Test environment registers a Mongoose plugin that throws when a tenant-owned query lacks `startupId` | Accepted | Structural guard against future isolation bugs | n/a |
+| D29 | 2026-10-10 | Tenant isolation, budget, draft/approval/handoff, AI safety, and unsubscribe suites are merge-blocking in CI | Accepted | Audit requirement: tests must exist in code | n/a |
+| D30 | 2026-10-10 | Server never fetches user-supplied URLs (`linkedinUrl`, `calendarLink` are stored and displayed only) | Accepted | Removes SSRF class | A feature that needs fetching |

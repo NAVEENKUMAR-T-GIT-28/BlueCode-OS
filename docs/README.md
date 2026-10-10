@@ -15,8 +15,8 @@
 | 3 | `API_CONTRACT.md` | Every endpoint under `/api/v1`, DTOs, errors, permissions | Draft; freezes after the trial cap is set |
 | 4 | `AI_SERVICE_DESIGN.md` | Six LLM tasks: prompts, output schemas, validators, runtime, cost model, tests | Draft for review |
 | 5 | `FRONTEND_ARCHITECTURE.md` | Routes, pages, flows, data fetching, UX states, honest wording, mailto handoff | Draft for review |
-| 6 | `SECURITY_AND_TESTING.md` | Threat checklist, tenant-isolation test matrix | **Next** |
-| 7 | `DEPLOYMENT_AND_OPS.md` | Env vars, VPS, Mongo replica set, logging, backups | Planned |
+| 6 | `SECURITY_AND_TESTING.md` | Threat register, controls, test inventory with IDs, release gates | Draft for review |
+| 7 | `DEPLOYMENT_AND_OPS.md` | Env vars, VPS, Mongo replica set, logging, backups | **Next** |
 | 8 | `DECISIONS.md` | Decision log (D1–D19) | Living |
 
 ## Frozen
@@ -26,7 +26,7 @@
 ## Open before freezing the API contract and generating code
 1. **Trial spend cap (D5):** ₹250 (current default) or ₹1,000? One config value, used by backend, API, UI, and tests.
 2. **Apollo verification:** capabilities 1–3 (`search_orgs`, `search_people`, `enrich`) verified with evidence. Until then discovery is unavailable in live mode (mock mode only). Commercial questions C1–C3 answered before any non-founder customer uses live Apollo data.
-3. **Tests to implement** (not just plan): tenant isolation, budget concurrency, draft concurrency, approval reset, do-not-contact.
+3. **Tests to implement** (not just plan): the blocker suites in `SECURITY_AND_TESTING.md` §5–§6 (tenant isolation, budget concurrency, draft concurrency, approval reset, do-not-contact, unsubscribe).
 
 M1 (foundation) in `BACKEND_ARCHITECTURE.md §17` can start now.
 
