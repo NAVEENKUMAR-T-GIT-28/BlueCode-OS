@@ -8,7 +8,7 @@ One row per decision. Never delete rows; supersede them. Dates are ISO.
 | D2 | 2026-10-10 | Outbound is `mailto:` handoff only; no server-side sending | **Accepted / Frozen for MVP** (confirmed by product owner) | Observable, low-risk. Verifying Apollo sequences later does **not** reopen this; it requires a deliberate product-scope change | Only by explicit product-scope decision |
 | D3 | 2026-10-10 | No job queue and no scheduled jobs; time rules evaluated lazily | Accepted | Smaller MVP, fewer failure modes | Activity sync or multi-instance deployment |
 | D4 | 2026-10-10 | Money stored as integer paise (INR) | Accepted | No float errors | Multi-currency billing |
-| D5 | 2026-10-10 | Trial cap from config, default ₹250 (25000 paise) | **Pending owner freeze** | Docs conflict (₹1,000 vs ₹250); config makes it trivial to change | Pilot cost data |
+| D5 | 2026-10-10 | Trial cap from `TRIAL_SPEND_CAP_PAISE`; amount pending owner freeze | **Pending owner freeze** | Amount is unapproved; backend, API, UI, and tests must use the same owner-frozen configuration | Before implementation is frozen |
 | D6 | 2026-10-10 | Lead score is deterministic; LLM writes explanation only | Accepted | Reproducible, cheap, comparable | Evidence AI adjustment improves outcomes |
 | D7 | 2026-10-10 | JWT in httpOnly cookie, 24 h, key-rotation list, membership checked every request | Accepted | No extra collection | Mobile/SSO |
 | D8 | 2026-10-10 | MongoDB runs as a (single-node) replica set | Accepted | Transactions for workspace creation and usage commit | n/a |

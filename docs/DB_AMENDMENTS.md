@@ -1,8 +1,8 @@
 # BlueCode OS — Database Amendments
 
 **Document:** `DB_AMENDMENTS.md`
-**Amends:** `DB_ARCHITECTURE.md` (13 collections, unchanged count)
-**Rule:** the approved schema = `DB_ARCHITECTURE.md` + every item marked **Adopt** here. Code may not use a field that is not in one of the two files. Once approved, fold these into `DB_ARCHITECTURE.md` and bump its version.
+**Historical scope:** records the rationale and disposition of proposed database changes; the MVP schema remains the 13-collection contract in `DB_ARCHITECTURE.md`.
+**Rule:** `DB_ARCHITECTURE.md` is the sole coding source for models, validators, DTOs, and migrations. This register is historical context only; do not generate code from it or treat an **Adopt** entry here as a schema change unless that change has been incorporated into `DB_ARCHITECTURE.md`.
 
 **Decision key:** Adopt = implement in MVP · Defer = do not implement; reserved for a later phase · Reject = not needed.
 

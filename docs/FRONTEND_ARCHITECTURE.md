@@ -384,7 +384,7 @@ All labels come from this file so copy cannot drift.
 | message `handed_off` | "Opened in your email app" | "Sent", "Delivered" |
 | message `user_reported_sent` | "Marked sent by you" | "Sent" (without "by you"), "Delivered" |
 | message `cancelled` | "Cancelled" | |
-| campaign `active` | "Active (an email was opened)" | "Running", "Sending" |
+| campaign `active` | "Active (a message was handed off)" | "Running", "Sending" |
 | activity `handoff_requested` | "Opened email app" | |
 | activity `reply_logged` | "Reply added by you" | "Reply received" |
 | score | "Fit score (estimate)" | "Prediction", "Likelihood to buy" |
