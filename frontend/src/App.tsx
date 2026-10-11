@@ -37,7 +37,7 @@ function useRemote<T>(path: string | null, startupId?: string) {
   const [data, setData] = useState<T | null>(null);
   const [meta, setMeta] = useState<ApiEnvelope<T>["meta"]>();
   const [loading, setLoading] = useState(Boolean(path));
-  const [error, setError] = useState<unknown>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [version, setVersion] = useState(0);
   useEffect(() => {
     let active = true;
@@ -50,7 +50,7 @@ function useRemote<T>(path: string | null, startupId?: string) {
       setMeta(result.meta);
     }).catch((cause: unknown) => {
       if (!active) return;
-      setError(cause);
+      setError(cause instanceof Error ? cause : new Error(String(cause)));
       setData(null);
       setMeta(undefined);
     }).finally(() => { if (active) setLoading(false); });
@@ -142,12 +142,12 @@ function Notice({ title, children, tone = "info" }: { title?: string; children: 
 
 function useMutation() {
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<unknown>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [success, setSuccess] = useState("");
   const execute = useCallback(async <T,>(work: () => Promise<T>, successText = "") => {
     setPending(true); setError(null); setSuccess("");
     try { const result = await work(); setSuccess(successText); return result; }
-    catch (cause) { setError(cause); return null; }
+    catch (cause) { setError(cause instanceof Error ? cause : new Error(String(cause))); return null; }
     finally { setPending(false); }
   }, []);
   return { pending, error, success, execute, clearError: () => setError(null), setSuccess };
@@ -221,7 +221,7 @@ function AuthPage({ onAuthenticated, navigate }: { onAuthenticated: (user: AppUs
       {isRegister && <Field label="Full name" name="name" value={name} onChange={setName} placeholder="Your name" required minLength={1} maxLength={80} autoComplete="name"/>}
       <Field label="Email address" name="email" type="email" value={email} onChange={setEmail} placeholder="you@company.com" required autoComplete="email"/>
       <Field label="Password" name="password" type="password" value={password} onChange={setPassword} placeholder={isRegister ? "At least 10 characters" : "Your password"} required minLength={isRegister ? 10 : 1} autoComplete={isRegister ? "new-password" : "current-password"}/>
-      {error && <InlineFeedback error={error}/>}{message && <InlineFeedback success={message}/>}
+      {Boolean(error) && <InlineFeedback error={error}/>}{message && <InlineFeedback success={message}/>}
       <Button type="submit" className="button-full" loading={pending}>{isRegister ? "Create account" : "Sign in"}<Icon name="arrow" size={16}/></Button>
       <p className="auth-switch">{isRegister ? "Already have an account?" : "New to BlueCode OS?"} <button type="button" onClick={() => navigate(isRegister ? "/login" : "/register")}>{isRegister ? "Sign in" : "Create account"}</button></p>
       <p className="auth-security"><Icon name="check" size={14}/> Session is managed with a secure cookie. No token is stored in the browser app.</p>
@@ -310,7 +310,7 @@ function DashboardPage({ startupId, navigate, user }: PageContext) {
   const maxValue = Math.max(1, ...stages.map(([, v]) => typeof v === "number" ? v : 0));
   const usage = summary.data || {};
   return <div className="page-stack"><PageHeader title={`Welcome back${user?.name ? `, ${user.name.split(" ")[0]}` : ""}`} description="A grounded snapshot of what your workspace has recorded." action={<Button icon="plus" onClick={() => navigate("/icps/new")}>Create ICP</Button>}/>
-    {remote.loading && <LoadingState/>}{remote.error && <ErrorState error={remote.error} retry={remote.reload}/>}
+    {remote.loading && <LoadingState/>}{Boolean(remote.error) && (<ErrorState error={remote.error} retry={remote.reload}/>)}
     {remote.data && <>
       <div className="metrics">
         <MetricCard label="Prospects found" value={today.prospectsFound} icon="building" detail="Recorded in this workspace"/>
@@ -598,14 +598,14 @@ function MessagesListPage({ startupId, navigate }: { startupId: string; navigate
   const messages = useRemote<RecordValue[]>("/api/v1/messages?limit=100&sort=-createdAt", startupId);
   const campaigns = useRemote<RecordValue[]>("/api/v1/campaigns?limit=100", startupId);
   const prospects = useRemote<RecordValue[]>("/api/v1/prospects?limit=100", startupId);
-  const [campaignId, setCampaignId] = useState(""); const [prospectId, setProspectId] = useState(""); const [contactId, setContactId] = useState(""); const [step, setStep] = useState("1"); const [contactOptions, setContactOptions] = useState<RecordValue[]>([]); const [contactLoading, setContactLoading] = useState(false); const [contactError, setContactError] = useState<unknown>(null);
+  const [campaignId, setCampaignId] = useState(""); const [prospectId, setProspectId] = useState(""); const [contactId, setContactId] = useState(""); const [step, setStep] = useState("1"); const [contactOptions, setContactOptions] = useState<RecordValue[]>([]); const [contactLoading, setContactLoading] = useState(false); const [contactError, setContactError] = useState<Error | null>(null);
   const mutation = useMutation();
   useEffect(() => { if (!campaignId && campaigns.data?.[0]?.id) setCampaignId(campaigns.data[0].id); }, [campaigns.data, campaignId]);
   useEffect(() => { if (!prospectId && prospects.data?.length) { const eligible = prospects.data.find((item) => item.status !== "do_not_contact"); if (eligible?.id) setProspectId(eligible.id); } }, [prospects.data, prospectId]);
   useEffect(() => {
     if (!prospectId) { setContactOptions([]); setContactId(""); return; }
     let live = true; setContactLoading(true); setContactError(null); setContactOptions([]); setContactId("");
-    api.get<RecordValue[]>(`/api/v1/prospects/${encodeURIComponent(prospectId)}/decision-makers`, startupId).then((response) => { if (live) { setContactOptions(response.data || []); const eligible = (response.data || []).find((candidate: RecordValue) => Boolean(candidate.businessEmail) && candidate.outreachStatus !== "do_not_contact"); setContactId(eligible?.id || ""); } }).catch((error: unknown) => { if (live) setContactError(error); }).finally(() => { if (live) setContactLoading(false); });
+    api.get<RecordValue[]>(`/api/v1/prospects/${encodeURIComponent(prospectId)}/decision-makers`, startupId).then((response) => { if (live) { setContactOptions(response.data || []); const eligible = (response.data || []).find((candidate: RecordValue) => Boolean(candidate.businessEmail) && candidate.outreachStatus !== "do_not_contact"); setContactId(eligible?.id || ""); } }).catch((error: unknown) => { if (live) setContactError(error instanceof Error ? error : new Error(String(error))); }).finally(() => { if (live) setContactLoading(false); });
     return () => { live = false; };
   }, [prospectId, startupId]);
   async function draft(event: FormEvent<HTMLFormElement>) {
@@ -614,7 +614,7 @@ function MessagesListPage({ startupId, navigate }: { startupId: string; navigate
   }
   return <div className="page-stack"><PageHeader title="Message workspace" description="Create, edit, approve, and hand off messages with human review." action={<Button variant="secondary" onClick={() => navigate("/outreach")}>Back to outreach</Button>}/>
     <Notice title="Drafts are not sent automatically">Mock message drafts are fixtures, not verified AI personalization. Review every fact, then get approval before opening your email app.</Notice>
-    <section className="card panel"><div className="section-heading"><h2>Create a message draft</h2><p>Choose an existing campaign, prospect, and manually saved contact.</p></div><form className="form-grid" onSubmit={draft}><label className="field"><span>Campaign</span><select required value={campaignId} onChange={(event) => setCampaignId(event.target.value)}><option value="">Choose campaign</option>{(campaigns.data || []).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.status}</option>)}</select></label><label className="field"><span>Prospect</span><select required value={prospectId} onChange={(event) => setProspectId(event.target.value)}><option value="">Choose prospect</option>{(prospects.data || []).map((item) => <option key={item.id} value={item.id} disabled={item.status === "do_not_contact"}>{item.name} · {item.status}{item.status === "do_not_contact" ? " · DNC" : ""}</option>)}</select></label><label className="field"><span>Saved contact</span><select required value={contactId} onChange={(event) => setContactId(event.target.value)}><option value="">Choose contact</option>{contactOptions.map((item) => <option key={item.id} value={item.id} disabled={item.outreachStatus === "do_not_contact" || !item.businessEmail}>{item.fullName} · {item.businessEmail || "No email"}{item.outreachStatus === "do_not_contact" ? " · DNC" : !item.businessEmail ? " · Email required" : ""}</option>)}</select>{contactLoading && <small className="field-help">Loading saved contacts…</small>}{contactError && <small className="field-error">{readError(contactError)}</small>}{!contactLoading && !contactError && prospectId && contactOptions.length === 0 && <small className="field-help">No saved contacts. Open the prospect and add one manually.</small>}</label><label className="field"><span>Message step</span><select value={step} onChange={(event) => setStep(event.target.value)}>{[1,2,3,4,5].map((value) => <option key={value} value={value}>Step {value}</option>)}</select></label><div className="form-actions form-actions-wide"><Button type="submit" loading={mutation.pending} disabled={!campaignId || !contactId || Boolean(contactOptions.find((c) => c.id === contactId && (c.outreachStatus === "do_not_contact" || !c.businessEmail)))}>Create draft</Button></div><InlineFeedback error={mutation.error} success={mutation.success}/></form></section>
+    <section className="card panel"><div className="section-heading"><h2>Create a message draft</h2><p>Choose an existing campaign, prospect, and manually saved contact.</p></div><form className="form-grid" onSubmit={draft}><label className="field"><span>Campaign</span><select required value={campaignId} onChange={(event) => setCampaignId(event.target.value)}><option value="">Choose campaign</option>{(campaigns.data || []).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.status}</option>)}</select></label><label className="field"><span>Prospect</span><select required value={prospectId} onChange={(event) => setProspectId(event.target.value)}><option value="">Choose prospect</option>{(prospects.data || []).map((item) => <option key={item.id} value={item.id} disabled={item.status === "do_not_contact"}>{item.name} · {item.status}{item.status === "do_not_contact" ? " · DNC" : ""}</option>)}</select></label><label className="field"><span>Saved contact</span><select required value={contactId} onChange={(event) => setContactId(event.target.value)}><option value="">Choose contact</option>{contactOptions.map((item) => <option key={item.id} value={item.id} disabled={item.outreachStatus === "do_not_contact" || !item.businessEmail}>{item.fullName} · {item.businessEmail || "No email"}{item.outreachStatus === "do_not_contact" ? " · DNC" : !item.businessEmail ? " · Email required" : ""}</option>)}</select>{contactLoading && <small className="field-help">Loading saved contacts…</small>}{contactError ? <small className="field-error">{readError(contactError)}</small> : null}{!contactLoading && !contactError && prospectId && contactOptions.length === 0 && <small className="field-help">No saved contacts. Open the prospect and add one manually.</small>}</label><label className="field"><span>Message step</span><select value={step} onChange={(event) => setStep(event.target.value)}>{[1,2,3,4,5].map((value) => <option key={value} value={value}>Step {value}</option>)}</select></label><div className="form-actions form-actions-wide"><Button type="submit" loading={mutation.pending} disabled={!campaignId || !contactId || Boolean(contactOptions.find((c) => c.id === contactId && (c.outreachStatus === "do_not_contact" || !c.businessEmail)))}>Create draft</Button></div><InlineFeedback error={mutation.error} success={mutation.success}/></form></section>
     <section className="card panel"><div className="panel-heading"><div><h2>Saved messages</h2><p>Filter by status from the list in the API response.</p></div><Button variant="secondary" icon="refresh" onClick={messages.reload}>Refresh</Button></div>{messages.loading && <LoadingState/>}{messages.error && <ErrorState error={messages.error} retry={messages.reload}/>}{messages.data && messages.data.length > 0 ? <DataTable><thead><tr><th>Subject</th><th>Step / revision</th><th>Approval</th><th>Status</th><th>Updated</th><th/></tr></thead><tbody>{messages.data.map((item) => <tr key={item.id}><td><b>{item.subject || "Untitled message"}</b><small className="cell-subtitle">Campaign ID: {item.campaignId}</small></td><td>{item.step} / {item.revision}</td><td><StatusBadge value={item.approvalStatus}/></td><td><StatusBadge value={item.status}/></td><td>{formatDate(item.updatedAt)}</td><td><Button variant="ghost" onClick={() => navigate(`/outreach/messages/${encodeURIComponent(item.id)}`)}>Open</Button></td></tr>)}</tbody></DataTable> : !messages.loading && !messages.error ? <EmptyState title="No messages yet" description="Use the form above to create the first draft from a saved contact."/> : null}</section>
   </div>;
 }
