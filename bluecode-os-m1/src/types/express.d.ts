@@ -5,7 +5,12 @@ declare global {
     interface Request {
       requestId: string;
       auth?: { userId: Types.ObjectId };
-      tenant?: { startupId: Types.ObjectId; role: 'owner' | 'admin' | 'member' };
+      tenant?: {
+        startupId: Types.ObjectId;
+        role: 'owner' | 'admin' | 'member';
+        plan: 'trial' | 'starter' | 'growth' | 'pro';
+        status: 'active' | 'trial_expired' | 'suspended';
+      };
     }
   }
 }

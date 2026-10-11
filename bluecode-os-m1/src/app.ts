@@ -8,6 +8,7 @@ import { csrfGuard } from './middleware/csrf.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import authRoutes from './routes/auth.routes.js';
 import startupRoutes from './routes/startup.routes.js';
+import icpRoutes from './routes/icp.routes.js';
 
 export const createApp = () => {
   const app = express();
@@ -22,6 +23,7 @@ export const createApp = () => {
   app.get('/health', (_req, res) => res.json({ data: { status: 'ok', time: new Date().toISOString() } }));
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/startups', startupRoutes);
+  app.use('/api/v1/icps', icpRoutes);
   app.use(notFoundHandler);
   app.use(errorHandler);
   return app;
