@@ -133,7 +133,7 @@ export const usageRepository = {
         startupId, provider: 'apollo', operation: 'apollo.people_search', status: 'success',
       }),
       UsageRecord.countDocuments({
-        startupId, provider: 'llm', operation: 'llm.draft_message', status: 'success',
+        startupId, provider: 'llm', operation: { $in: ['llm.draft_message', 'llm.draft_message@1'] }, status: 'success',
       }),
       Icp.countDocuments({ startupId, isActive: true }),
     ]);
@@ -147,7 +147,7 @@ export const usageRepository = {
         startupId, provider: 'apollo', operation: 'apollo.people_search', status: 'success',
       });
       case 'emails': return UsageRecord.countDocuments({
-        startupId, provider: 'llm', operation: 'llm.draft_message', status: 'success',
+        startupId, provider: 'llm', operation: { $in: ['llm.draft_message', 'llm.draft_message@1'] }, status: 'success',
       });
       case 'icps': return Icp.countDocuments({ startupId, isActive: true });
     }
