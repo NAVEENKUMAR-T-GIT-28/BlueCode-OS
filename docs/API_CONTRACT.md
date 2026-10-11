@@ -1,1623 +1,613 @@
-# BlueCode OS — API Contract v1.0
+# BlueCode OS — API Documentation (Frozen Frontend Contract)
 
-**Document:** `API_CONTRACT.md`  
-**Depends on:** `BACKEND_ARCHITECTURE.md` v2 (modules, permissions, error registry), `DB_ARCHITECTURE.md` v2.0 (fields, enums)  
-**Consumers:** `server/` (validators, controllers, contract tests) and `client/` (API layer, error handling)  
-**Base path:** `/api/v1`  
-**Status:** Canonical API Specification. All backend Zod validators, controllers, and frontend API client types conform to this contract.
+**Document status:** FROZEN FOR MVP-PREVIEW FRONTEND INTEGRATION  
+**Version:** 1.0  
+**Snapshot date:** 2026-10-11  
+**API prefix:** `/api/v1`  
+**Architecture:** Express + TypeScript + Zod + MongoDB/Mongoose, multi-tenant modular monolith
 
----
+> **Contract rule:** Build the frontend against the endpoints and behaviors documented here. This is an *as-built* contract for the MVP-preview backend, not a wish-list. Do not infer endpoints from `API_CONTRACT.md` or architecture documents when they are absent below. Any endpoint, request/response shape, enum, or permission change requires explicit owner approval, an update to this file first, and a version/change note. No collections or features are added by this contract.
 
-## 1. Conventions
+## 1. Environments and transport
 
-### 1.1 Transport
-- JSON only (`Content-Type: application/json`). Max request body 100 KB.
-- IDs are 24-hex ObjectId **strings**. Dates are ISO-8601 UTC (`2026-10-10T08:30:00.000Z`).
-- **Money is integer paise** (INR, where 100 paise = ₹1). Field names end in `Paise`. The UI formats them for display.
-- Field names are `camelCase`. Unknown request fields are **strictly rejected** (`422 VALIDATION_FAILED` / `400 VALIDATION_ERROR`).
+- Local API origin: `http://localhost:4000` (use the configured deployment origin outside local development).
+- All application routes except `GET /health` use the `/api/v1` prefix.
+- JSON request and response bodies. JSON body limit is 100 KB.
+- Mongo ObjectIds are exposed as 24-character hex strings. Timestamps are ISO-8601 date-time strings.
+- Money is integer paise (INR); divide by 100 for rupees when formatting. Do not hard-code a spend cap or entitlement limit.
+- Request body/query schemas reject unknown fields when the endpoint uses a strict Zod schema. Send only the fields documented for that operation.
 
-### 1.2 Required headers
+### Required browser behavior
 
-| Header | When | Notes |
-|---|---|---|
-| `Cookie: bc_session=<jwt>` | All authenticated routes | `httpOnly`, `SameSite=Lax`, set by `/auth/login` |
-| `X-Startup-Id: <id>` | All workspace/tenant routes | Tenant context identifier; server verifies caller is an active member |
-| `X-Requested-With: XMLHttpRequest` | Every state-modifying request (`POST`, `PATCH`, `DELETE`) | Browser CSRF protection layer; checked by `csrfGuard` |
-| `Content-Type: application/json` | Requests with a JSON body | Required on non-empty bodies |
+1. Use `credentials: 'include'` (or Axios `withCredentials: true`) so the browser sends the `bc_session` cookie. Never read, construct, or store the session JWT in frontend JavaScript.
+2. Tenant-scoped endpoints require `x-startup-id: <active-workspace-id>`. This header selects a workspace; the server validates the authenticated user's active membership and does not trust the header by itself.
+3. Every non-GET request, including public auth POSTs, must be sent from the configured `CLIENT_ORIGIN` and include `X-Requested-With: XMLHttpRequest`. The browser supplies the `Origin` header; the frontend must not try to set it manually.
+4. Set `Content-Type: application/json` for requests with JSON bodies. GET requests do not require the CSRF marker.
 
-### 1.3 Response envelope
+Suggested frontend API client defaults:
 
-**Success:**
-```json
-{ "data": { }, "meta": { "page": 1, "limit": 20, "total": 134 } }
+```ts
+const API_ORIGIN = import.meta.env.VITE_API_ORIGIN ?? 'http://localhost:4000';
+
+async function apiRequest<T>(path: string, init: RequestInit = {}, startupId?: string): Promise<T> {
+  const method = (init.method ?? 'GET').toUpperCase();
+  const headers = new Headers(init.headers);
+  if (init.body != null) headers.set('Content-Type', 'application/json');
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    headers.set('X-Requested-With', 'XMLHttpRequest');
+  }
+  if (startupId) headers.set('x-startup-id', startupId);
+
+  const response = await fetch(`${API_ORIGIN}${path}`, {
+    ...init,
+    method,
+    headers,
+    credentials: 'include',
+  });
+  const payload = response.status === 204 ? undefined : await response.json();
+  if (!response.ok) throw new ApiRequestError(response.status, payload);
+  return payload as T;
+}
 ```
-- `meta` appears on paginated list endpoints.
-- `204 No Content` responses have an empty body.
 
-**Error (all errors adhere to this envelope):**
+The `ApiRequestError` implementation is frontend-owned. Keep both the HTTP status and `payload.error.code`; do not rely only on the human-readable message.
+
+## 2. Response envelopes
+
+### Success
+
+Single resource/action:
+
+```json
+{ "data": { "id": "..." } }
+```
+
+Paginated collection:
+
+```json
+{
+  "data": [],
+  "meta": { "page": 1, "limit": 20, "total": 0 }
+}
+```
+
+`meta` shape is endpoint-specific. For instance, next actions report `{ "limit": 100, "total": n }`; activity history is capped at 100 rows and does not currently expose pagination metadata. `204 No Content` has no response body.
+
+### Error
+
 ```json
 {
   "error": {
     "code": "VALIDATION_FAILED",
-    "message": "Human-readable error summary",
-    "details": [ { "path": "criteria.industries[0]", "issue": "Too long (max 80)" } ],
-    "requestId": "7f1c9a2e-4b12-4c32-a5e2-9b2f6d0a7a3b"
-  }
-}
-```
-- `details` is present for validation errors, plan limit violations, or specific capability flags.
-- `requestId` is included on all responses (tracked via `X-Request-Id` response header).
-
-### 1.4 Pagination, sorting, filtering
-- **Pagination:** `?page=1&limit=20` (default `page=1`, default `limit=20`, max `limit=100`).
-- **Sorting:** `?sort=field` (ascending) or `?sort=-field` (descending). Allowed sort fields are strictly validated per endpoint.
-- **Filtering:** Validated strictly using Zod schemas. Any unrecognised query parameter returns `422 VALIDATION_FAILED`.
-
-### 1.5 Error registry (HTTP ↔ code)
-
-| HTTP | Code | When | Frontend behaviour |
-|---|---|---|---|
-| 400 | `MALFORMED_REQUEST` | Invalid JSON syntax, malformed 24-hex ObjectId in URL params | Show generic error toast; log |
-| 401 | `UNAUTHENTICATED` | Missing, invalid, or expired session cookie; deactivated user | Clear session state; redirect to `/login` |
-| 402 | `PLAN_LIMIT_REACHED` | Plan entitlement exhausted (prospects, searches, emails, seats) | Display upgrade banner / seat limit modal |
-| 402 | `BUDGET_EXHAUSTED` | Workspace API spend cap would be exceeded | "Usage limit reached" persistent banner; disable paid actions |
-| 402 | `TRIAL_EXPIRED` | Trial period ended (15 days); writes and paid calls blocked | Read-only workspace mode + upgrade CTA |
-| 403 | `FORBIDDEN` | Caller's role lacks the required permission key | Hide/disable action control; display access denied message |
-| 403 | `NOT_A_MEMBER` | Caller is not an active member of the requested `X-Startup-Id` | Redirect to workspace switcher |
-| 404 | `NOT_FOUND` | Resource missing **or belongs to another tenant** | Render 404 page / not found toast |
-| 409 | `CONFLICT` | Unique constraint violation (e.g. duplicate email in tenant) | Highlight conflicting field with error message |
-| 409 | `INVALID_STATE` | Illegal lifecycle state transition | Refresh record state; show state error |
-| 409 | `APPROVAL_REQUIRED` | Campaign or message requires approval before action | Prompt reviewer to approve first |
-| 409 | `DO_NOT_CONTACT` | Prospect or contact marked Do Not Contact | Show suppression banner; prevent contact outreach |
-| 422 | `VALIDATION_FAILED` | Request body or query parameters violate schema constraints | Highlight specific invalid fields using `details` |
-| 429 | `RATE_LIMITED` | Exceeded IP rate limit or per-tenant operation limit | Show retry countdown using `Retry-After` header |
-| 502 | `PROVIDER_FAILED` | External upstream provider (Apollo, LLM) failed or timed out | Prompt user to retry; log provider error |
-| 503 | `CAPABILITY_DISABLED` | Feature capability flag disabled in current deployment | Render fallback UI (e.g. manual entry instead of auto-enrich) |
-| 500 | `INTERNAL` | Unhandled server exception | Generic error modal displaying `requestId` for support |
-
-### 1.6 Rate limits
-
-| Scope | Limit | Window | Applies to |
-|---|---|---|---|
-| Global IP | 300 requests | 15 minutes | All incoming requests |
-| Auth Limiter | 10 requests | 15 minutes | `POST /auth/login`, `POST /auth/register` |
-| Paid Operations (💰) | 30 requests | 1 minute | Discovery, enrichment, LLM synthesis |
-
-### 1.7 Symbols used below
-- 💰 **Paid operation**: Checks and reserves ledger budget; writes a row to `usageRecords`.
-- 🔌 **Capability-gated**: Requires upstream provider capability to be active; returns `503 CAPABILITY_DISABLED` if disabled.
-- 📈 **Entitlement-checked**: Counter tracked against workspace subscription / trial plan limits.
-- **Perm**: The required permission string enforced by `requirePermission(<key>)`.
-
----
-
-## 2. Resource shapes (DTOs)
-
-```ts
-User {
-  id: string;
-  name: string;
-  email: string;
-  status: 'active' | 'deactivated';
-  createdAt: string;
-}
-
-Membership {
-  startupId: string;
-  startupName: string;
-  role: 'owner' | 'admin' | 'member';
-  status: 'active' | 'invited' | 'removed';
-}
-
-Startup {
-  id: string;
-  name: string;
-  plan: 'trial' | 'starter' | 'growth' | 'scale';
-  status: 'active' | 'suspended';
-  trialEndsAt?: string;
-  settings: {
-    calendarLink?: string;
-    senderName?: string;
-    senderTitle?: string;
-    productSummary?: string;
-  };
-  spend: {
-    capPaise: number;
-    committedPaise: number;
-    reservedPaise: number;
-    remainingPaise: number;
-  };
-  me?: { role: 'owner' | 'admin' | 'member'; permissions: string[] };
-  capabilities?: { searchOrgs: boolean; searchPeople: boolean; enrich: boolean };
-  createdAt: string;
-}
-
-Member {
-  id: string;
-  userId: string;
-  name: string;
-  email: string;
-  role: 'owner' | 'admin' | 'member';
-  status: 'active' | 'invited' | 'removed';
-}
-
-Icp {
-  id: string;
-  name: string;
-  criteria: IcpCriteria;
-  criteriaVersion: number;
-  isActive: boolean;
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-IcpCriteria {
-  industries?: string[];
-  countries?: string[];
-  regions?: string[];
-  employeeRanges?: string[];
-  revenueRanges?: string[];
-  technologies?: string[];
-  companyKeywords?: string[];
-  excludedIndustries?: string[];
-  excludedCompanies?: string[];
-  targetJobTitles?: string[];
-  targetSeniority?: string[];
-  contactLocations?: string[];
-}
-
-Prospect {
-  id: string;
-  icpId: string;
-  name: string;
-  domain?: string;
-  status: 'discovered' | 'qualified' | 'in_outreach' | 'replied' | 'disqualified' | 'do_not_contact';
-  firmographics: {
-    industry?: string;
-    employeeCount?: number;
-    country?: string;
-    region?: string;
-    revenueRange?: string;
-    technologies?: string[];
-    keywords?: string[];
-  };
-  latestScore?: ScoreSummary;
-  createdAt: string;
-  updatedAt: string;
-}
-
-ScoreSummary {
-  icpId: string;
-  score: number;
-  category: 'hot' | 'high' | 'medium' | 'low';
-  coverage: number;
-  scoredAt: string;
-}
-
-LeadScore {
-  id: string;
-  prospectId: string;
-  icpId: string;
-  score: number;
-  category: 'hot' | 'high' | 'medium' | 'low';
-  coverage: number;
-  breakdown: Record<string, number>;
-  explanation?: string;
-  explanationSource?: 'rules' | 'ai';
-  scoringVersion: number;
-  icpVersion: number;
-  scoredAt: string;
-}
-
-Signal {
-  id: string;
-  prospectId: string;
-  decisionMakerId?: string;
-  signalType: 'hiring' | 'technology' | 'funding' | 'leadership_change' | 'general';
-  description: string;
-  evidence: Array<{ field: string; value: unknown }>;
-  confidence: number;
-  status: 'active' | 'stale' | 'dismissed';
-  detectedAt: string;
-}
-
-Contact {
-  id: string;
-  prospectId: string;
-  fullName: string;
-  jobTitle?: string;
-  businessEmail?: string;
-  linkedinUrl?: string;
-  emailVerified?: boolean;
-  outreachStatus: 'not_contacted' | 'contacted' | 'replied' | 'bounced' | 'do_not_contact';
-  source: 'apollo' | 'manual';
-  createdAt: string;
-}
-
-Campaign {
-  id: string;
-  icpId: string;
-  name: string;
-  channel: 'email';
-  status: 'draft' | 'pending_approval' | 'approved' | 'active' | 'paused' | 'completed' | 'cancelled';
-  stats?: { totalMessages: number; drafts: number; ready: number; handedOff: number; sent: number };
-  approvedBy?: string;
-  approvedAt?: string;
-  createdBy: string;
-  createdAt: string;
-}
-
-Message {
-  id: string;
-  campaignId: string;
-  prospectId: string;
-  decisionMakerId: string;
-  step: number;
-  revision: number;
-  subject?: string;
-  body?: string;
-  approvalStatus: 'pending' | 'approved' | 'rejected' | 'revision_requested';
-  status: 'draft' | 'ready' | 'handed_off' | 'user_reported_sent' | 'cancelled';
-  approvedBy?: string;
-  approvedAt?: string;
-  sentAt?: string;
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-Activity {
-  id: string;
-  prospectId: string;
-  campaignId?: string;
-  messageId?: string;
-  activityType:
-    | 'prospect_discovered' | 'contact_added' | 'contact_enriched' | 'score_updated'
-    | 'signal_detected' | 'message_approved' | 'handoff_requested'
-    | 'message_user_reported_sent' | 'reply_logged' | 'reply_classified'
-    | 'status_changed' | 'integration_error';
-  summary: string;
-  occurredAt: string;
-  classification?: { intent: string; confidence: number };
-  metadata?: Record<string, unknown>;
-}
-
-NextAction {
-  id: string;
-  prospectId: string;
-  decisionMakerId?: string;
-  actionType: 'approve_draft' | 'handoff_message' | 'review_reply' | 'enrich_contact' | 'review_prospect';
-  title: string;
-  reason: string;
-  priority: 'high' | 'medium' | 'low';
-  status: 'pending' | 'accepted' | 'dismissed' | 'completed' | 'expired';
-  dueAt?: string;
-  expiresAt?: string;
-  basedOnActivityIds?: string[];
-  createdAt: string;
-}
-
-UsageRecord {
-  id: string;
-  provider: 'apollo' | 'llm';
-  operation: string;
-  status: 'success' | 'failed' | 'blocked';
-  costAmount?: number;
-  costType: 'reported' | 'estimated';
-  errorCode?: string;
-  occurredAt: string;
-}
-```
-
----
-
-## 3. Endpoint Index
-
-| # | Area | Method | Path | Auth / Headers | Permission | Description |
-|---|---|---|---|---|---|---|
-| 0 | Health | `GET` | `/health` | Public | None | Server health and timestamp check |
-| 1 | Auth | `POST` | `/api/v1/auth/register` | Public (Rate-limited) | None | Register new user account |
-| 2 | Auth | `POST` | `/api/v1/auth/login` | Public (Rate-limited) | None | Login, issues `bc_session` cookie |
-| 3 | Auth | `GET` | `/api/v1/auth/me` | `bc_session` | None | Current user info & active memberships |
-| 4 | Auth | `POST` | `/api/v1/auth/logout` | `bc_session` | None | Clear session cookie |
-| 5 | Workspace | `POST` | `/api/v1/startups` | `bc_session` | Signed-in user | Create new startup workspace (owner) |
-| 6 | Workspace | `GET` | `/api/v1/startups` | `bc_session` | Signed-in user | List caller's active workspaces |
-| 7 | Workspace | `GET` | `/api/v1/startups/current` | `bc_session`, `x-startup-id` | `workspace:read` | Get active workspace, spend & permissions |
-| 8 | Workspace | `PATCH` | `/api/v1/startups/current` | `bc_session`, `x-startup-id` | `workspace:settings` | Update workspace name and settings |
-| 9 | Workspace | `GET` | `/api/v1/startups/current/members` | `bc_session`, `x-startup-id` | `workspace:read` | List workspace team members |
-| 10 | Workspace | `POST` | `/api/v1/startups/current/members` | `bc_session`, `x-startup-id` | `member:invite` | Invite existing user to workspace |
-| 11 | Workspace | `PATCH` | `/api/v1/startups/current/members/:memberId` | `bc_session`, `x-startup-id` | `member:role` | Update member role (`admin`/`member`) |
-| 12 | Workspace | `DELETE` | `/api/v1/startups/current/members/:memberId` | `bc_session`, `x-startup-id` | `member:role` | Soft-remove member from workspace |
-| 13 | ICP | `POST` | `/api/v1/icps/propose` | `bc_session`, `x-startup-id` | `icp:write` | AI-assisted ICP proposal generation (💰 LLM) |
-| 14 | ICP | `POST` | `/api/v1/icps` | `bc_session`, `x-startup-id` | `icp:write` | Create new Ideal Customer Profile (📈) |
-| 15 | ICP | `GET` | `/api/v1/icps` | `bc_session`, `x-startup-id` | `workspace:read` | List ICPs with pagination and filters |
-| 16 | ICP | `GET` | `/api/v1/icps/:id` | `bc_session`, `x-startup-id` | `workspace:read` | Get ICP details by ID |
-| 17 | ICP | `PATCH` | `/api/v1/icps/:id` | `bc_session`, `x-startup-id` | `icp:write` | Update ICP name or criteria (bumps version) |
-| 18 | ICP | `POST` | `/api/v1/icps/:id/archive` | `bc_session`, `x-startup-id` | `icp:write` | Soft-archive ICP (`isActive=false`) |
-| 19 | Prospects | `POST` | `/api/v1/prospects/search` | `bc_session`, `x-startup-id` | `prospect:search` | Live Apollo organization search (💰 🔌 📈) |
-| 20 | Prospects | `GET` | `/api/v1/prospects` | `bc_session`, `x-startup-id` | `workspace:read` | List prospects with score filters & paging |
-| 21 | Prospects | `POST` | `/api/v1/prospects/select` | `bc_session`, `x-startup-id` | `prospect:search` | Batch qualify prospects (`discovered` → `qualified`) |
-| 22 | Prospects | `GET` | `/api/v1/prospects/:id` | `bc_session`, `x-startup-id` | `workspace:read` | Prospect detail with scores, contacts, signals |
-| 23 | Prospects | `POST` | `/api/v1/prospects/:id/disqualify` | `bc_session`, `x-startup-id` | `prospect:search` | Disqualify prospect with optional reason |
-| 24 | Prospects | `POST` | `/api/v1/prospects/:id/do-not-contact` | `bc_session`, `x-startup-id` | `prospect:mark_dnc` | Mark prospect & all contacts as DNC |
-| 25 | Prospects | `POST` | `/api/v1/prospects/:id/clear-do-not-contact` | `bc_session`, `x-startup-id` | `prospect:clear_dnc` | Clear DNC status (requires reason, admin/owner) |
-| 26 | Scoring | `POST` | `/api/v1/prospects/score` | `bc_session`, `x-startup-id` | `prospect:score` | Batch deterministic rule-based lead scoring |
-| 27 | Scoring | `GET` | `/api/v1/prospects/:id/scores` | `bc_session`, `x-startup-id` | `workspace:read` | Get latest score breakdown or historical audit |
-| 28 | Scoring | `POST` | `/api/v1/prospects/:id/scores/explain` | `bc_session`, `x-startup-id` | `prospect:score` | AI rationale generation for score (💰 LLM) |
-| 29 | Signals | `GET` | `/api/v1/prospects/:id/signals` | `bc_session`, `x-startup-id` | `workspace:read` | List signals with 45-day stale evaluation |
-| 30 | Signals | `POST` | `/api/v1/prospects/:id/signals/detect` | `bc_session`, `x-startup-id` | `prospect:score` | Deterministic rule-based signal detection |
-| 31 | Signals | `POST` | `/api/v1/prospects/:id/signals/interpret` | `bc_session`, `x-startup-id` | `prospect:score` | LLM interpretation of stored evidence (💰 🔌) |
-| 32 | Signals | `POST` | `/api/v1/signals/:id/dismiss` | `bc_session`, `x-startup-id` | `prospect:score` | Dismiss signal while preserving evidence |
-| 33 | Contacts | `GET` | `/api/v1/prospects/:id/decision-makers` | `bc_session`, `x-startup-id` | `workspace:read` | List decision-maker contacts for prospect |
-| 34 | Contacts | `POST` | `/api/v1/prospects/:id/decision-makers/search` | `bc_session`, `x-startup-id` | `contact:enrich` | Apollo people search without emails (💰 🔌 📈) |
-| 35 | Contacts | `POST` | `/api/v1/prospects/:id/decision-makers` | `bc_session`, `x-startup-id` | `contact:enrich` | Manually add contact (free fallback) |
-| 36 | Contacts | `POST` | `/api/v1/decision-makers/:id/enrich` | `bc_session`, `x-startup-id` | `contact:enrich` | Apollo contact email enrichment (💰 🔌) |
-| 37 | Contacts | `POST` | `/api/v1/decision-makers/:id/do-not-contact` | `bc_session`, `x-startup-id` | `prospect:mark_dnc` | Mark individual contact as Do Not Contact |
-| 38 | Campaigns | `POST` | `/api/v1/campaigns` | `bc_session`, `x-startup-id` | `message:draft` | Create new email campaign in `draft` status |
-| 39 | Campaigns | `GET` | `/api/v1/campaigns` | `bc_session`, `x-startup-id` | `workspace:read` | List campaigns with status filters & pagination |
-| 40 | Campaigns | `GET` | `/api/v1/campaigns/:id` | `bc_session`, `x-startup-id` | `workspace:read` | Get campaign by ID with message statistics |
-| 41 | Campaigns | `PATCH` | `/api/v1/campaigns/:id` | `bc_session`, `x-startup-id` | `message:draft` | Rename campaign while in `draft` status |
-| 42 | Campaigns | `POST` | `/api/v1/campaigns/:id/submit` | `bc_session`, `x-startup-id` | `message:draft` | Transition campaign: `draft` → `pending_approval` |
-| 43 | Campaigns | `POST` | `/api/v1/campaigns/:id/approve` | `bc_session`, `x-startup-id` | `campaign:approve` | Transition campaign: `pending_approval` → `approved` |
-| 44 | Campaigns | `POST` | `/api/v1/campaigns/:id/pause` | `bc_session`, `x-startup-id` | `campaign:approve` | Pause active campaign: `active` → `paused` |
-| 45 | Campaigns | `POST` | `/api/v1/campaigns/:id/resume` | `bc_session`, `x-startup-id` | `campaign:approve` | Resume campaign: `paused` → `active` |
-| 46 | Campaigns | `POST` | `/api/v1/campaigns/:id/complete` | `bc_session`, `x-startup-id` | `campaign:approve` | Mark campaign completed: `active`\|`paused` → `completed` |
-| 47 | Campaigns | `POST` | `/api/v1/campaigns/:id/cancel` | `bc_session`, `x-startup-id` | `campaign:approve` | Cancel campaign; cascades cancellation to drafts |
-| 48 | Messages | `POST` | `/api/v1/messages/draft` | `bc_session`, `x-startup-id` | `message:draft` | Generate/retrieve outreach draft (💰 LLM 📈) |
-| 49 | Messages | `GET` | `/api/v1/messages` | `bc_session`, `x-startup-id` | `workspace:read` | List messages with approval & status filters |
-| 50 | Messages | `GET` | `/api/v1/messages/:id` | `bc_session`, `x-startup-id` | `workspace:read` | Get message details by ID |
-| 51 | Messages | `PATCH` | `/api/v1/messages/:id` | `bc_session`, `x-startup-id` | `message:edit` | Edit subject/body; resets approval to `pending` |
-| 52 | Messages | `POST` | `/api/v1/messages/:id/approve` | `bc_session`, `x-startup-id` | `message:approve` | Approve message: `pending` → `approved` (`ready`) |
-| 53 | Messages | `POST` | `/api/v1/messages/:id/reject` | `bc_session`, `x-startup-id` | `message:approve` | Reject message draft with optional reason |
-| 54 | Messages | `POST` | `/api/v1/messages/:id/request-revision` | `bc_session`, `x-startup-id` | `message:approve` | Request revision with reviewer feedback note |
-| 55 | Messages | `POST` | `/api/v1/messages/:id/handoff` | `bc_session`, `x-startup-id` | `message:handoff` | Prepare mailto payload; marks `handed_off` |
-| 56 | Messages | `POST` | `/api/v1/messages/:id/mark-sent` | `bc_session`, `x-startup-id` | `message:handoff` | Founder confirms message sent manually in client |
-| 57 | Messages | `POST` | `/api/v1/messages/:id/cancel` | `bc_session`, `x-startup-id` | `message:edit` | Cancel unsent message before handoff |
-| 58 | Activity | `GET` | `/api/v1/activities` | `bc_session`, `x-startup-id` | `workspace:read` | List audit activities with time & type filters |
-| 59 | Activity | `POST` | `/api/v1/activities/replies` | `bc_session`, `x-startup-id` | `activity:log` | Log founder-received reply; AI classify (💰 LLM) |
-| 60 | Next Actions | `GET` | `/api/v1/next-actions` | `bc_session`, `x-startup-id` | `workspace:read` | List recommended next best actions by priority |
-| 61 | Next Actions | `POST` | `/api/v1/next-actions/:id/accept` | `bc_session`, `x-startup-id` | `nba:act` | Accept recommendation: `pending` → `accepted` |
-| 62 | Next Actions | `POST` | `/api/v1/next-actions/:id/dismiss` | `bc_session`, `x-startup-id` | `nba:act` | Dismiss recommendation with optional reason |
-| 63 | Next Actions | `POST` | `/api/v1/next-actions/:id/complete` | `bc_session`, `x-startup-id` | `nba:act` | Mark recommendation completed |
-| 64 | Usage | `GET` | `/api/v1/usage/summary` | `bc_session`, `x-startup-id` | `workspace:read` | Get workspace spend cap, commitments & counters |
-| 65 | Usage | `GET` | `/api/v1/usage/records` | `bc_session`, `x-startup-id` | `workspace:read` | Paginated audit log of usage ledger transactions |
-| 66 | Dashboard | `GET` | `/api/v1/dashboard` | `bc_session`, `x-startup-id` | `workspace:read` | Aggregated founder funnel, counts & priority actions |
-
----
-
-## 4. Health and Auth
-
-### `GET /health`
-- **Access:** Public (No authentication, no tenant header, no CSRF check).
-- **Description:** Verifies server liveness and service availability.
-- **Response `200`:**
-```json
-{
-  "data": {
-    "status": "ok",
-    "time": "2026-10-11T12:00:00.000Z"
+    "message": "Request validation failed",
+    "details": [{ "path": "name", "issue": "Required" }],
+    "requestId": "..."
   }
 }
 ```
 
----
+`details` is optional and may be a list of validation issues or an operation-specific object. Use `requestId` for support/debugging; never display internal logs or secrets.
+
+| HTTP | Error code(s) | Frontend handling |
+|---:|---|---|
+| 400 | `MALFORMED_REQUEST` | Treat malformed JSON/ID as a request error; refresh IDs from API data. |
+| 401 | `UNAUTHENTICATED` | Clear local authenticated view and route to login. |
+| 402 | `PLAN_LIMIT_REACHED`, `TRIAL_EXPIRED`, `BUDGET_EXHAUSTED` | Show the corresponding plan, read-only, or usage-limit state; don't retry automatically. |
+| 403 | `FORBIDDEN`, `NOT_A_MEMBER` | Show access/workspace selection state; don't infer permissions from UI state. |
+| 404 | `NOT_FOUND` | Treat resource as unavailable; a foreign-tenant resource is intentionally indistinguishable from a missing one. |
+| 409 | `CONFLICT`, `INVALID_STATE`, `DO_NOT_CONTACT`, `APPROVAL_REQUIRED` | Refresh current resource and explain the state/suppression/approval conflict. |
+| 422 | `VALIDATION_FAILED` | Map `details[].path` to fields when details is an array; otherwise show an operation-level error. |
+| 429 | `RATE_LIMITED` | Respect `Retry-After` when present. |
+| 502 | `PROVIDER_FAILED` | Provider returned an unusable result; offer a manual fallback where available. |
+| 503 | `CAPABILITY_DISABLED` | Feature is intentionally unavailable in this preview; do not loop/retry. |
+| 500 | `INTERNAL` | Show a generic failure and retain `requestId` for diagnostics. |
+
+## 3. Implemented endpoint index
+
+All endpoints below are implemented in the current preview source. Permissions are enforced server-side; the frontend may use the workspace's returned `me.permissions` to adjust controls, but that is not an authorization substitute.
+
+| Area | Method | Path | Permission / access | Current behavior |
+|---|---|---|---|---|
+| Health | GET | `/health` | Public | Health status/time. |
+| Auth | POST | `/api/v1/auth/register` | Public, rate-limited | Create user; does not automatically create a workspace. |
+| Auth | POST | `/api/v1/auth/login` | Public, rate-limited | Sets `bc_session` cookie; returns user and memberships. |
+| Auth | GET | `/api/v1/auth/me` | Authenticated | Returns safe user and memberships. |
+| Auth | POST | `/api/v1/auth/logout` | Clears cookie | Returns `204`. |
+| Workspace | GET | `/api/v1/startups` | Authenticated | List the user's accessible workspaces. |
+| Workspace | POST | `/api/v1/startups` | Authenticated; no tenant header | Creates a workspace and owner membership. |
+| Workspace | GET | `/api/v1/startups/current` | `workspace:read`, tenant header | Current workspace, permissions, capability flags and spend summary. |
+| ICP | POST | `/api/v1/icps/propose` | `icp:write` | Mock-first proposal; never saves an ICP. Live provider use is gated. |
+| ICP | POST | `/api/v1/icps` | `icp:write` | Create ICP. |
+| ICP | GET | `/api/v1/icps` | `workspace:read` | List ICPs. |
+| ICP | GET | `/api/v1/icps/:id` | `workspace:read` | Get one ICP. |
+| ICP | PATCH | `/api/v1/icps/:id` | `icp:write` | Update name and/or criteria. |
+| ICP | POST | `/api/v1/icps/:id/archive` | `icp:write` | Archive ICP; returns `204`. |
+| Prospects | POST | `/api/v1/prospects/search` | `prospect:search` | **Currently disabled:** returns `503 CAPABILITY_DISABLED` for `search_orgs`. |
+| Prospects | GET | `/api/v1/prospects` | `workspace:read` | List/filter known prospects. |
+| Prospects | POST | `/api/v1/prospects/select` | `prospect:search` | Select/qualify a batch of known prospects. |
+| Prospects | GET | `/api/v1/prospects/:id` | `workspace:read` | Prospect detail plus scores, signals, contacts, recent activity. |
+| Prospects | POST | `/api/v1/prospects/:id/disqualify` | `prospect:search` | Disqualify prospect. |
+| Prospects | POST | `/api/v1/prospects/:id/do-not-contact` | `prospect:mark_dnc` | Mark prospect and its contacts do-not-contact. |
+| Prospects | POST | `/api/v1/prospects/:id/clear-do-not-contact` | `prospect:clear_dnc` | Return prospect to `qualified`; contact-level DNC remains in place. |
+| Scoring | POST | `/api/v1/prospects/score` | `prospect:score` | Deterministic score for 1–50 prospects against one ICP. |
+| Scoring | GET | `/api/v1/prospects/:id/scores` | `workspace:read` | Latest score or score history. |
+| Scoring | POST | `/api/v1/prospects/:id/scores/explain` | `prospect:score` | Mock-only explanation for a previously stored score; numeric scoring fields remain unchanged. |
+| Contacts | GET | `/api/v1/prospects/:id/decision-makers` | `workspace:read` | List saved contacts. |
+| Contacts | POST | `/api/v1/prospects/:id/decision-makers` | `contact:enrich` | Add a contact manually. |
+| Contacts | POST | `/api/v1/prospects/:id/decision-makers/search` | `contact:enrich` | **Currently disabled:** returns `503 CAPABILITY_DISABLED` for `search_people`. |
+| Contacts | POST | `/api/v1/decision-makers/:id/enrich` | `contact:enrich` | **Currently disabled:** returns `503 CAPABILITY_DISABLED` for `enrich`. |
+| Contacts | POST | `/api/v1/decision-makers/:id/do-not-contact` | `prospect:mark_dnc` | Suppress one contact. |
+| Signals | GET | `/api/v1/prospects/:id/signals` | `workspace:read` | List evidence-backed signals. |
+| Signals | POST | `/api/v1/prospects/:id/signals/detect` | `prospect:score` | Deterministically detect signals from stored data. |
+| Signals | POST | `/api/v1/prospects/:id/signals/interpret` | `prospect:score` | **Currently disabled:** returns `503 CAPABILITY_DISABLED` until AI service/configuration is approved. |
+| Signals | POST | `/api/v1/signals/:id/dismiss` | `prospect:score` | Dismiss a signal while retaining its evidence. |
+| Campaigns | POST | `/api/v1/campaigns` | `message:draft` | Create email campaign. |
+| Campaigns | GET | `/api/v1/campaigns` | `workspace:read` | List campaigns. |
+| Campaigns | GET | `/api/v1/campaigns/:id` | `workspace:read` | Get campaign and message counts. |
+| Campaigns | PATCH | `/api/v1/campaigns/:id` | `message:draft` | Rename a draft campaign. |
+| Campaigns | POST | `/api/v1/campaigns/:id/submit` | `message:draft` | Submit campaign for approval. |
+| Campaigns | POST | `/api/v1/campaigns/:id/approve` | `campaign:approve` | Approve campaign. |
+| Campaigns | POST | `/api/v1/campaigns/:id/pause` | `campaign:approve` | Pause campaign. |
+| Campaigns | POST | `/api/v1/campaigns/:id/resume` | `campaign:approve` | Resume campaign. |
+| Campaigns | POST | `/api/v1/campaigns/:id/complete` | `campaign:approve` | Complete campaign. |
+| Campaigns | POST | `/api/v1/campaigns/:id/cancel` | `campaign:approve` | Cancel campaign. |
+| Messages | POST | `/api/v1/messages/draft` | `message:draft` | Create or return an idempotent draft. |
+| Messages | GET | `/api/v1/messages` | `workspace:read` | List/filter messages. |
+| Messages | GET | `/api/v1/messages/:id` | `workspace:read` | Get one message. |
+| Messages | PATCH | `/api/v1/messages/:id` | `message:edit` | Edit subject/body when state permits. |
+| Messages | POST | `/api/v1/messages/:id/approve` | `message:approve` | Approve draft. |
+| Messages | POST | `/api/v1/messages/:id/reject` | `message:approve` | Reject draft. |
+| Messages | POST | `/api/v1/messages/:id/request-revision` | `message:approve` | Return draft for revision. |
+| Messages | POST | `/api/v1/messages/:id/handoff` | `message:handoff` | Record handoff request and return email fields for frontend `mailto:`. Does **not** send email. |
+| Messages | POST | `/api/v1/messages/:id/mark-sent` | `message:handoff` | Record the founder's report that they sent it. Does **not** verify sending or delivery. |
+| Messages | POST | `/api/v1/messages/:id/cancel` | `message:edit` | Cancel a message before handoff. |
+| Activity | GET | `/api/v1/activities` | `workspace:read` | List up to 100 activity records with filters. |
+| Activity | POST | `/api/v1/activities/replies` | `activity:log` | Log a founder-pasted reply; no inbox sync. |
+| Next actions | GET | `/api/v1/next-actions` | `workspace:read` | List next-best actions; lazily refreshes follow-up candidates. |
+| Next actions | POST | `/api/v1/next-actions/:id/accept` | `nba:act` | Accept pending action and return a route hint. Does not execute outreach. |
+| Next actions | POST | `/api/v1/next-actions/:id/dismiss` | `nba:act` | Dismiss action. Reason is accepted but not persisted. |
+| Next actions | POST | `/api/v1/next-actions/:id/complete` | `nba:act` | Mark action complete. |
+| Dashboard | GET | `/api/v1/dashboard` | `workspace:read` | Metrics, funnel snapshot, top actions and usage summary. |
+| Usage | GET | `/api/v1/usage/summary` | `workspace:read` | Current spend counters and usage counts. |
+| Usage | GET | `/api/v1/usage/records` | `workspace:read` | Filtered, paginated usage ledger. |
+
+## 4. Authentication and workspace contracts
 
 ### `POST /api/v1/auth/register`
-- **Access:** Public. Rate-limited (10 req / 15 min per IP). CSRF check enforced.
-- **Request Body (`application/json`):**
-  - `name`: string, 1–80 characters, trimmed.
-  - `email`: string, valid email format, max 254 characters, lowercased.
-  - `password`: string, 10–128 characters.
-  - Strict schema: extraneous fields are rejected.
-- **Response `201`:**
-```json
-{
-  "data": {
-    "id": "664f9a2e4b124c32a5e29b2f",
-    "name": "Alice Founder",
-    "email": "alice@example.com",
-    "status": "active",
-    "createdAt": "2026-10-11T07:00:00.000Z"
-  }
-}
-```
-- **Errors:**
-  - `400 VALIDATION_ERROR` / `422 VALIDATION_FAILED`: Invalid email, short password, or extra fields.
-  - `409 CONFLICT`: Email already registered.
-  - `429 RATE_LIMITED`: Exceeded rate limit.
 
----
+Request:
+
+```json
+{ "name": "Founder Name", "email": "founder@example.com", "password": "at-least-10-characters" }
+```
+
+- `name`: 1–80 characters.
+- `email`: valid email, maximum 254 characters.
+- `password`: 10–128 characters.
+- Success: `201 { "data": { "id", "name", "email", "status" } }`.
+- Duplicate email: `409 CONFLICT`. Registration does not automatically create a workspace.
 
 ### `POST /api/v1/auth/login`
-- **Access:** Public. Rate-limited (10 req / 15 min per IP). CSRF check enforced.
-- **Request Body (`application/json`):**
-  - `email`: string, valid email format.
-  - `password`: string, 1–128 characters.
-- **Response `200`:**
-  - Sets `Set-Cookie: bc_session=<jwt>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400`.
-```json
-{
-  "data": {
-    "user": {
-      "id": "664f9a2e4b124c32a5e29b2f",
-      "name": "Alice Founder",
-      "email": "alice@example.com",
-      "status": "active",
-      "createdAt": "2026-10-11T07:00:00.000Z"
-    },
-    "memberships": [
-      {
-        "startupId": "665a1b2c3d4e5f6a7b8c9d0e",
-        "role": "owner",
-        "status": "active"
-      }
-    ]
-  }
-}
-```
-- **Errors:**
-  - `401 UNAUTHENTICATED`: Invalid email or incorrect password (identical timing-safe error response).
-  - `429 RATE_LIMITED`: Rate limit exceeded.
 
----
+Request: `{ "email": "founder@example.com", "password": "..." }`.
+
+Success: `200 { "data": { "user": { "id", "name", "email" }, "memberships": [...] } }` plus the `bc_session` Set-Cookie response header. Incorrect email/password uses `401 UNAUTHENTICATED`.
 
 ### `GET /api/v1/auth/me`
-- **Access:** Requires `bc_session` cookie.
-- **Response `200`:** Returns currently authenticated user and active memberships.
-```json
-{
-  "data": {
-    "user": {
-      "id": "664f9a2e4b124c32a5e29b2f",
-      "name": "Alice Founder",
-      "email": "alice@example.com",
-      "status": "active",
-      "createdAt": "2026-10-11T07:00:00.000Z"
-    },
-    "memberships": [
-      {
-        "startupId": "665a1b2c3d4e5f6a7b8c9d0e",
-        "role": "owner",
-        "status": "active"
-      }
-    ]
-  }
-}
-```
-- **Errors:**
-  - `401 UNAUTHENTICATED`: Missing or invalid session cookie.
 
----
+Success: `200 { "data": { "user": { "id", "name", "email", "status", "createdAt" }, "memberships": [...] } }`.
 
 ### `POST /api/v1/auth/logout`
-- **Access:** CSRF check enforced.
-- **Description:** Clears the `bc_session` cookie (`Max-Age=0`).
-- **Response `204`:** No Content.
 
----
-
-## 5. Workspace & Members
-
-### `POST /api/v1/startups`
-- **Access:** Authenticated user (`bc_session`). No `X-Startup-Id` required. CSRF check enforced.
-- **Description:** Creates a new startup workspace and automatically binds caller as `owner` in a transaction. Initial plan is `trial` with a 15-day trial period and trial spend cap.
-- **Request Body (`application/json`):**
-  - `name`: string, 1–80 characters, trimmed.
-- **Response `201`:**
-```json
-{
-  "data": {
-    "id": "665a1b2c3d4e5f6a7b8c9d0e",
-    "name": "Acme AI",
-    "plan": "trial",
-    "status": "active",
-    "trialEndsAt": "2026-10-26T07:00:00.000Z",
-    "settings": {},
-    "createdAt": "2026-10-11T07:00:00.000Z"
-  }
-}
-```
-
----
+Success: `204`; the server clears `bc_session`.
 
 ### `GET /api/v1/startups`
-- **Access:** Authenticated user (`bc_session`).
-- **Description:** Returns all active startup workspaces where caller holds an active membership.
-- **Response `200`:**
-```json
-{
-  "data": [
-    {
-      "id": "665a1b2c3d4e5f6a7b8c9d0e",
-      "name": "Acme AI",
-      "plan": "trial",
-      "status": "active",
-      "role": "owner",
-      "createdAt": "2026-10-11T07:00:00.000Z"
-    }
-  ]
-}
-```
 
----
+Success: `{ "data": { "startups": [{ "startupId", "startupName", "role", "status", "plan", "startupStatus" }] } }`.
+
+### `POST /api/v1/startups`
+
+Request: `{ "name": "Workspace name" }`; `name` is 1–80 characters. Success: `201 { "data": { "id", "name", "plan", "status", "trialEndsAt", "createdAt" } }`. Workspace and owner membership are created transactionally; the spend cap is sourced from server configuration.
 
 ### `GET /api/v1/startups/current`
-- **Access:** Authenticated user (`bc_session`), `X-Startup-Id` header. Permission: `workspace:read`.
-- **Description:** Returns full details of active workspace, including ledger spend totals, caller role & permissions, and provider capability flags.
-- **Response `200`:**
+
+Requires `x-startup-id`. Success shape:
+
 ```json
 {
   "data": {
-    "id": "665a1b2c3d4e5f6a7b8c9d0e",
-    "name": "Acme AI",
-    "plan": "trial",
-    "status": "active",
-    "trialEndsAt": "2026-10-26T07:00:00.000Z",
-    "settings": {
-      "calendarLink": "https://cal.com/acme/demo",
-      "senderName": "Alice Founder",
-      "senderTitle": "Founder & CEO",
-      "productSummary": "AI sales agent for B2B founders"
-    },
-    "spend": {
-      "capPaise": 100000,
-      "committedPaise": 0,
-      "reservedPaise": 0,
-      "remainingPaise": 100000
-    },
-    "me": {
-      "role": "owner",
-      "permissions": ["workspace:read", "workspace:settings", "member:invite", "member:role", "icp:write", "prospect:search", "prospect:score", "contact:enrich", "campaign:approve", "message:draft", "message:edit", "message:approve", "message:handoff", "activity:log", "nba:act"]
-    },
-    "capabilities": {
-      "searchOrgs": true,
-      "searchPeople": true,
-      "enrich": true
-    },
-    "createdAt": "2026-10-11T07:00:00.000Z"
+    "startup": {
+      "id": "...", "name": "...", "plan": "trial", "status": "active",
+      "trialEndsAt": "...", "settings": {},
+      "spend": { "capPaise": 0, "committedPaise": 0, "reservedPaise": 0, "remainingPaise": 0 },
+      "me": { "role": "owner", "permissions": [] },
+      "capabilities": { "searchOrgs": false, "searchPeople": false, "enrich": false },
+      "createdAt": "..."
+    }
   }
 }
 ```
 
----
+The numeric spend values above are shape examples only, **not configured limits**. Current capability flags are false. The active permission list returned by the API is the UI's source for optional control visibility.
 
-### `PATCH /api/v1/startups/current`
-- **Access:** Authenticated user (`bc_session`), `X-Startup-Id` header. Permission: `workspace:settings` (`owner`, `admin`). CSRF check enforced.
-- **Request Body (`application/json`, all optional):**
-  - `name`?: string, 1–80 characters.
-  - `settings`?: object:
-    - `calendarLink`?: string, valid URL format.
-    - `senderName`?: string, max 80 characters.
-    - `senderTitle`?: string, max 80 characters.
-    - `productSummary`?: string, max 1000 characters.
-- **Response `200`:** Returns updated `Startup` object.
+## 5. ICP contracts
 
----
+### Criteria object
 
-### `GET /api/v1/startups/current/members`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Response `200`:**
-```json
-{
-  "data": [
-    {
-      "id": "665b2a1b2c3d4e5f6a7b8c9d",
-      "userId": "664f9a2e4b124c32a5e29b2f",
-      "name": "Alice Founder",
-      "email": "alice@example.com",
-      "role": "owner",
-      "status": "active"
-    }
-  ]
-}
-```
-
----
-
-### `POST /api/v1/startups/current/members`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `member:invite` (`owner`, `admin`). Entitlement: 📈 `maxUsers` (1 on trial plan). CSRF check enforced.
-- **Description:** Invites an existing registered user to the workspace.
-- **Request Body (`application/json`):**
-  - `email`: string, valid email format.
-  - `role`: enum (`admin` | `member`).
-- **Response `201`:** Returns invited `Member` object with `status: "active"` (or `invited`).
-- **Errors:**
-  - `402 PLAN_LIMIT_REACHED`: Seat limit reached (e.g. trial has 1 seat limit).
-  - `404 NOT_FOUND`: No user account exists with the provided email.
-  - `409 CONFLICT`: User is already a member of this workspace.
-
----
-
-### `PATCH /api/v1/startups/current/members/:memberId`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `member:role` (`owner`, `admin`). CSRF check enforced.
-- **Params:** `memberId`: 24-character ObjectId string.
-- **Request Body (`application/json`):**
-  - `role`: enum (`owner` | `admin` | `member`).
-- **Response `200`:** Returns updated `Member` object.
-- **Errors:**
-  - `409 INVALID_STATE`: Cannot demote the sole remaining owner of the workspace.
-
----
-
-### `DELETE /api/v1/startups/current/members/:memberId`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `member:role` (`owner`, `admin`). CSRF check enforced.
-- **Params:** `memberId`: 24-character ObjectId string.
-- **Description:** Soft-removes member (`status="removed"`).
-- **Response `204`:** No Content.
-- **Errors:**
-  - `409 INVALID_STATE`: Cannot remove the sole remaining owner of the workspace.
-
----
-
-## 6. Ideal Customer Profile (ICP)
+Allowed arrays: `industries`, `countries`, `regions`, `employeeRanges`, `revenueRanges`, `technologies`, `companyKeywords`, `excludedIndustries`, `excludedCompanies`, `targetJobTitles`, `targetSeniority`, `contactLocations`. Each array may contain at most 25 unique strings; each string is 1–80 characters. Unknown criteria keys are rejected.
 
 ### `POST /api/v1/icps/propose`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `icp:write`. 💰 Paid: LLM (`icp_extract`). CSRF check enforced.
-- **Description:** Synthesizes structured B2B targeting criteria from free-form company and product descriptions. **Does not save to database**; returns proposed criteria for founder review.
-- **Request Body (`application/json`):**
-  - `productDescription`: string, 20–2000 characters.
-  - `targetGeography`?: string, 1–100 characters.
-  - `salesObjective`?: string, 1–200 characters.
-  - `notes`?: string, max 1000 characters.
-- **Response `200`:**
+
+Request:
+
 ```json
 {
-  "data": {
-    "criteria": {
-      "industries": ["Human Resources", "Information Technology"],
-      "countries": ["United Kingdom"],
-      "employeeRanges": ["51-200", "201-500"],
-      "targetJobTitles": ["VP People", "Head of HR", "Chief People Officer"],
-      "targetSeniority": ["director", "vp", "c_level"]
-    },
-    "rationale": "High-growth UK mid-market tech companies require automated HR compliance."
-  }
+  "productDescription": "HRMS and payroll software for growing companies",
+  "targetGeography": "United Kingdom",
+  "salesObjective": "10 qualified meetings per month",
+  "notes": ""
 }
 ```
 
----
+`productDescription` is required (20–2000 characters); other fields are optional strings. Successful proposal returns `200 { "data": { "criteria": { ... }, "rationale": "..." } }`. An insufficient-data result can fail with `422 VALIDATION_FAILED` and a `missing` list. The proposal is never persisted as an ICP; frontend must allow review/editing and then call `POST /icps` to save. Mock-mode output is a deterministic demo fixture, **not live AI advice**. Live AI is fail-closed until the adapter, country allowlist, and cost estimate are approved.
 
 ### `POST /api/v1/icps`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `icp:write`. 📈 Entitlement: `maxIcps` (1 on trial). CSRF check enforced.
-- **Request Body (`application/json`):**
-  - `name`: string, 1–80 characters, trimmed.
-  - `criteria`: `IcpCriteria` object (arrays bounded: max 25 items each, max 80 chars per item).
-- **Response `201`:** Returns created `Icp` object with `criteriaVersion: 1` and `isActive: true`.
-- **Errors:**
-  - `402 PLAN_LIMIT_REACHED`: Workspace already has maximum active ICPs allowed on plan.
 
----
+Request: `{ "name": "ICP name", "criteria": { ... } }`. Success: `201 { "data": Icp }`.
 
 ### `GET /api/v1/icps`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Query Parameters:**
-  - `isActive`?: boolean string (`"true"` | `"false"`).
-  - `sort`?: enum (`createdAt` | `-createdAt`, default `-createdAt`).
-  - `page`?: integer >= 1 (default 1).
-  - `limit`?: integer 1–100 (default 20).
-- **Response `200`:**
-```json
-{
-  "data": [
-    {
-      "id": "665c1a2e4b124c32a5e29b2f",
-      "name": "UK Mid-Market Tech",
-      "criteria": { "industries": ["Information Technology"], "countries": ["United Kingdom"] },
-      "criteriaVersion": 1,
-      "isActive": true,
-      "createdBy": "664f9a2e4b124c32a5e29b2f",
-      "createdAt": "2026-10-11T08:00:00.000Z",
-      "updatedAt": "2026-10-11T08:00:00.000Z"
-    }
-  ],
-  "meta": { "page": 1, "limit": 20, "total": 1 }
-}
-```
 
----
+Query: `isActive=true|false`, `sort=createdAt|-createdAt`, `page` (default 1), `limit` (default 20, maximum 100). Success: `200 { "data": Icp[], "meta": { "page", "limit", "total" } }`.
 
 ### `GET /api/v1/icps/:id`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Params:** `id`: 24-character ObjectId string.
-- **Response `200`:** Returns `Icp` object.
 
----
+Success: `200 { "data": Icp }`.
 
 ### `PATCH /api/v1/icps/:id`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `icp:write`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Request Body (`application/json`):**
-  - `name`?: string, 1–80 characters.
-  - `criteria`?: `IcpCriteria` (full replacement of criteria).
-- **Description:** When `criteria` changes, server automatically increments `criteriaVersion` by 1.
-- **Response `200`:** Returns updated `Icp` object.
 
----
+Request must include at least one of:
+
+```json
+{ "name": "Updated name" }
+```
+
+or
+
+```json
+{ "criteria": { "industries": ["Accounting software"] } }
+```
+
+If `criteria` is supplied it is the replacement criteria object, not a partial merge. Success: `200 { "data": Icp }`.
 
 ### `POST /api/v1/icps/:id/archive`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `icp:write`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Sets `isActive = false`. Archived ICPs cannot be used for discovery searches.
-- **Response `204`:** No Content.
 
----
+No body; success `204`. Archived ICPs cannot be used for new scoring/campaign creation.
 
-## 7. Prospects and Discovery
+`Icp` response fields: `id`, `name`, `criteria`, `criteriaVersion`, `isActive`, `createdBy`, `createdAt`, `updatedAt`.
 
-### `POST /api/v1/prospects/search`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `prospect:search`. 💰 Paid: Apollo (`search_orgs`). 🔌 Capability-gated: `search_orgs`. 📈 Entitlement: `prospects`. CSRF check enforced.
-- **Request Body (`application/json`):**
-  - `icpId`: 24-character ObjectId string.
-  - `page`?: integer >= 1 (default 1).
-  - `perPage`?: integer 1–25 (default 25).
-- **Response `200`:**
-```json
-{
-  "data": {
-    "created": 18,
-    "existing": 5,
-    "alsoMatchesIcp": 2,
-    "hasMore": true,
-    "items": [
-      {
-        "id": "665d1a2e4b124c32a5e29b2f",
-        "icpId": "665c1a2e4b124c32a5e29b2f",
-        "name": "CloudScale Ltd",
-        "domain": "cloudscale.co.uk",
-        "status": "discovered",
-        "firmographics": { "industry": "Information Technology", "employeeCount": 120, "country": "United Kingdom" },
-        "latestScore": { "icpId": "665c1a2e4b124c32a5e29b2f", "score": 85, "category": "high", "coverage": 0.85, "scoredAt": "2026-10-11T08:30:00.000Z" },
-        "createdAt": "2026-10-11T08:30:00.000Z",
-        "updatedAt": "2026-10-11T08:30:00.000Z"
-      }
-    ],
-    "spend": { "remainingPaise": 99000 }
-  }
-}
-```
-- **Errors:**
-  - `409 INVALID_STATE`: Target ICP is archived.
-  - `503 CAPABILITY_DISABLED`: `search_orgs` capability is disabled in deployment.
+## 6. Prospect and scoring contracts
 
----
+### `POST /api/v1/prospects/search` — disabled provider capability
+
+Request schema: `{ "icpId": "<ObjectId>", "page": 1, "perPage": 25 }`, with `page` defaulting to 1 and `perPage` 1–25. The route currently returns `503 CAPABILITY_DISABLED` (`search_orgs`) in this preview. The frontend must not present live discovery as available, seed fake provider results into the production UI, or auto-retry this operation. Existing prospects can be listed and reviewed.
 
 ### `GET /api/v1/prospects`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Query Parameters:**
-  - `icpId`?: 24-character ObjectId string.
-  - `scoredAgainstIcpId`?: 24-character ObjectId string.
-  - `status`?: enum (`discovered` | `qualified` | `in_outreach` | `replied` | `disqualified` | `do_not_contact`).
-  - `category`?: string (comma-separated list: `hot,high,medium,low`).
-  - `minScore`?: integer 0–100.
-  - `q`?: string (name / domain search prefix).
-  - `includeLow`?: boolean string (`"true"` | `"false"`, default `false` hides `low` category).
-  - `sort`?: enum (`score` | `-score` | `createdAt` | `-createdAt` | `name`).
-  - `page`?: integer >= 1 (default 1).
-  - `limit`?: integer 1–100 (default 20).
-- **Response `200`:** Returns `{ data: Prospect[], meta }`.
 
----
+Optional query fields:
+
+- `icpId`: origin ICP filter.
+- `scoredAgainstIcpId`: choose which ICP's latest score to use for score filters/sorting.
+- `status`: `discovered | qualified | disqualified | do_not_contact`.
+- `category`: comma-separated values from `hot,high,medium,low`.
+- `minScore`: integer 0–100.
+- `q`: name/domain prefix query (1–100 characters).
+- `includeLow`: `true|false`, default `false`.
+- `sort`: `score|-score|createdAt|-createdAt|name`, default `-createdAt`.
+- `page`: default 1; `limit`: default 20, maximum 100.
+
+Success: `200 { "data": Prospect[], "meta": { "page", "limit", "total" } }`.
 
 ### `POST /api/v1/prospects/select`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `prospect:search`. CSRF check enforced.
-- **Description:** Batch transitions prospects from `discovered` to `qualified`. Skips records in terminal or DNC states.
-- **Request Body (`application/json`):**
-  - `prospectIds`: array of 24-character ObjectId strings (1–50 items).
-- **Response `200`:**
-```json
-{
-  "data": {
-    "updated": 10,
-    "skipped": [
-      { "id": "665d9...", "reason": "Already in outreach or marked do_not_contact" }
-    ]
-  }
-}
-```
 
----
+Request: `{ "prospectIds": ["<ObjectId>"] }`; 1–50 IDs. Success: `{ "data": { "updated": 1, "skipped": [{ "id": "...", "reason": "already_qualified" }] } }`. Reasons can include `already_qualified`, `do_not_contact`, `invalid_status`, and `state_changed`. Missing/foreign workspace IDs reject the batch rather than partially applying it.
 
 ### `GET /api/v1/prospects/:id`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Params:** `id`: 24-character ObjectId string.
-- **Response `200`:** Aggregates prospect detail with lead scores, active signals, decision makers, and recent audit activity.
-```json
-{
-  "data": {
-    "prospect": { "id": "665d1...", "name": "CloudScale Ltd", "status": "qualified" },
-    "scores": [ { "icpId": "665c1...", "latest": { "score": 85, "category": "high" } } ],
-    "signals": [ { "id": "665e1...", "signalType": "technology", "status": "active" } ],
-    "contacts": [ { "id": "665f1...", "fullName": "Sarah Connor", "outreachStatus": "not_contacted" } ],
-    "recentActivity": [ { "activityType": "prospect_discovered", "summary": "Discovered via Apollo" } ]
-  }
-}
-```
 
----
+Success: `{ "data": { "prospect": Prospect, "scores": [{ "icpId", "latest": LeadScore }], "signals": Signal[], "contacts": DecisionMaker[], "recentActivity": Activity[] } }`.
+
+`Prospect` fields include `id`, origin `icpId`, `name`, `status`, optional `apolloOrganizationId`, `domain`, `firmographics`, optional `latestScore`, `createdAt`, `updatedAt`. `prospects.icpId` is the origin ICP and must not be overwritten when a prospect is scored against another ICP.
 
 ### `POST /api/v1/prospects/:id/disqualify`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `prospect:search`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Request Body (`application/json`):**
-  - `reason`?: string, max 300 characters.
-- **Response `200`:** Returns updated `Prospect` with `status: "disqualified"`.
 
----
+Request: `{ "reason"?: "..." }`, optional maximum 300 characters. Success: `{ "data": Prospect }`.
 
 ### `POST /api/v1/prospects/:id/do-not-contact`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `prospect:mark_dnc`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Sets prospect to `do_not_contact` and cascades `outreachStatus="do_not_contact"` to **all** associated decision makers. Cancels pending unsent drafts.
-- **Request Body (`application/json`):**
-  - `reason`?: string, max 300 characters.
-- **Response `200`:** Returns updated `Prospect` with `status: "do_not_contact"`.
 
----
+Same optional `reason` body. Success: `{ "data": Prospect }`. The prospect and its saved contacts are suppressed.
 
 ### `POST /api/v1/prospects/:id/clear-do-not-contact`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `prospect:clear_dnc` (`owner`, `admin`). CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Restores prospect to `qualified` and logs an audit activity record. Requires explicit justification.
-- **Request Body (`application/json`):**
-  - `reason`: string, 5–300 characters (required).
-- **Response `200`:** Returns updated `Prospect` with `status: "qualified"`.
 
----
-
-## 8. Scoring
+Request: `{ "reason": "..." }`; reason is required and 5–300 characters. Success: `{ "data": Prospect }`. Prospect returns to `qualified`; contacts previously marked DNC remain suppressed until individually reviewed.
 
 ### `POST /api/v1/prospects/score`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `prospect:score`. CSRF check enforced.
-- **Description:** Deterministic rules-based lead scoring engine (0–100 scale based on industry, company size, revenue, tech stack, and location). Free of API charge.
-- **Request Body (`application/json`):**
-  - `prospectIds`: array of 24-character ObjectId strings (1–50 items).
-  - `icpId`: 24-character ObjectId string.
-- **Response `200`:**
-```json
-{
-  "data": {
-    "scored": 5,
-    "items": [
-      {
-        "prospectId": "665d1...",
-        "icpId": "665c1...",
-        "score": 85,
-        "category": "high",
-        "coverage": 0.85,
-        "scoredAt": "2026-10-11T09:00:00.000Z"
-      }
-    ]
-  }
-}
-```
 
----
+Request: `{ "prospectIds": ["<ObjectId>"], "icpId": "<ObjectId>" }`; 1–50 prospect IDs. Success: `200 { "data": { "scored": n, "items": [...] } }`. Score is deterministic; the API does not let AI alter the numeric score/category.
 
 ### `GET /api/v1/prospects/:id/scores`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Params:** `id`: 24-character ObjectId string.
-- **Query Parameters:**
-  - `icpId`?: 24-character ObjectId string.
-  - `history`?: boolean string (`"true"` | `"false"`, default `false`).
-- **Response `200`:** Returns latest `LeadScore` object, or paginated array `{ data: LeadScore[], meta }` when `history=true`.
 
----
+Query: optional `icpId`, `history=true|false` (default `false`), `page` (default 1), `limit` (default 20, maximum 100). Without `history=true`, returns one latest `LeadScore` for the chosen ICP, or the prospect's origin ICP when `icpId` is omitted. With `history=true`, returns `{ "data": LeadScore[], "meta": { "page", "limit", "total" } }`.
+
+`LeadScore` fields include `id`, `prospectId`, `icpId`, `score`, `category`, `coverage`, `breakdown`, optional `explanation`, `explanationSource`, `scoringVersion`, `icpVersion`, `scoredAt`, `createdAt`. Categories: `hot`, `high`, `medium`, `low`. If `coverage < 0.5`, present the score as limited-data; the score remains an estimate, not a prediction.
 
 ### `POST /api/v1/prospects/:id/scores/explain`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `prospect:score`. 💰 Paid: LLM. CSRF check enforced.
-- **Description:** Generates an AI textual rationale explaining why the prospect scored in its category based strictly on stored criteria match breakdown. **Never alters score or category**.
-- **Request Body (`application/json`):**
-  - `icpId`: 24-character ObjectId string.
-- **Response `200`:** Returns `LeadScore` with `explanation` and `explanationSource: "ai"`.
 
----
+**Access:** Authenticated session, active `x-startup-id`, permission `prospect:score`, and normal CSRF headers.
 
-## 9. Signals
+Strict request body (unknown fields rejected): `{ "icpId": "<24-character ObjectId>" }`. The path `:id` is the prospect ID. The prospect, ICP, and score row must belong to the selected tenant; a score row must already exist for that prospect/ICP pair. If it does not, score first using `POST /api/v1/prospects/score`.
 
-### `GET /api/v1/prospects/:id/signals`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Params:** `id`: 24-character ObjectId string.
-- **Query Parameters:**
-  - `status`?: enum (`active` | `stale` | `dismissed`).
-- **Description:** Evaluates 45-day signal staleness at read time. Signals detected >45 days ago are returned with status `stale`.
-- **Response `200`:**
-```json
-{
-  "data": [
-    {
-      "id": "665e1...",
-      "prospectId": "665d1...",
-      "signalType": "technology",
-      "description": "Uses modern cloud infrastructure (Kubernetes, AWS)",
-      "evidence": [{ "field": "firmographics.technologies", "value": ["Kubernetes", "AWS"] }],
-      "confidence": 0.9,
-      "status": "active",
-      "detectedAt": "2026-10-11T08:00:00.000Z"
-    }
-  ]
-}
-```
+**Preview response:** `200 { "data": LeadScore & { "explanationMode": "mock" } }`. The stored explanation starts with `MOCK-ONLY`; the frontend must label it a simulated preview explanation, not live AI analysis. `explanationSource` remains `rules`, because no live model is called.
 
----
+Frozen behavior:
 
-### `POST /api/v1/prospects/:id/signals/detect`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `prospect:score`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Rule-based detection against verified firmographics. Free of charge.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:**
-```json
-{
-  "data": {
-    "created": 1,
-    "signals": [ { "id": "665e1...", "signalType": "hiring", "status": "active" } ],
-    "message": "Signals detected from available firmographics"
-  }
-}
-```
+- The endpoint is mock-only in MVP-Preview. Live LLM mode returns `503 CAPABILITY_DISABLED` until a real adapter and owner-approved estimate are configured.
+- Only `leadScores.explanation` and `leadScores.explanationSource` are eligible for update. `score`, `category`, `coverage`, `breakdown`, `scoringVersion`, and `icpVersion` must remain unchanged.
+- A saved `MOCK-ONLY` explanation is cached. Repeated requests return the same explanation without writing a second usage row.
+- The first successful save records one zero-cost `usageRecords` event with operation `llm.explain_score@1`.
+- Cross-tenant or missing prospect/ICP/score returns `404 NOT_FOUND`; unknown request fields return `422 VALIDATION_FAILED`.
 
----
-
-### `POST /api/v1/prospects/:id/signals/interpret`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `prospect:score`. 💰 Paid: LLM. 🔌 Capability-gated. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Synthesizes stored evidence into actionable outreach hooks. Rejects (`502 PROVIDER_FAILED`) any LLM claims that reference facts absent from stored data.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns synthesized `Signal` or `503 CAPABILITY_DISABLED` if unconfigured.
-
----
-
-### `POST /api/v1/signals/:id/dismiss`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `prospect:score`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Transitions signal to `dismissed` status while preserving evidence for audit history.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns updated `Signal` with `status: "dismissed"`.
-
----
-
-## 10. Contacts (Decision Makers)
+## 7. Contacts and buying signals
 
 ### `GET /api/v1/prospects/:id/decision-makers`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Params:** `id`: 24-character ObjectId string.
-- **Response `200`:** Returns `{ data: Contact[] }`.
 
----
+No body. Success: `{ "data": DecisionMaker[] }`.
 
-### `POST /api/v1/prospects/:id/decision-makers/search`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `contact:enrich`. 💰 Paid: Apollo (`search_people`). 🔌 Capability-gated: `search_people`. 📈 Entitlement: `dmSearches`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Queries Apollo for matching executives based on ICP targeting criteria. Contacts are stored **without email** at this stage.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:**
-```json
-{
-  "data": {
-    "created": 2,
-    "existing": 1,
-    "items": [
-      {
-        "id": "665f1...",
-        "prospectId": "665d1...",
-        "fullName": "Sarah Connor",
-        "jobTitle": "VP Engineering",
-        "outreachStatus": "not_contacted",
-        "source": "apollo",
-        "createdAt": "2026-10-11T09:15:00.000Z"
-      }
-    ]
-  }
-}
-```
-
----
+DecisionMaker fields: `id`, `prospectId`, `fullName`, optional `jobTitle`, `businessEmail`, `linkedinUrl`, optional `emailVerified`, `source` (`manual` or `apollo`), `outreachStatus`, `createdAt`, `updatedAt`.
 
 ### `POST /api/v1/prospects/:id/decision-makers`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `contact:enrich`. Free of charge (manual fallback). CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Request Body (`application/json`):**
-  - `fullName`: string, 1–120 characters, trimmed.
-  - `jobTitle`?: string, max 120 characters.
-  - `businessEmail`: string, valid email format.
-  - `linkedinUrl`?: string, valid URL format.
-- **Response `201`:** Returns created `Contact` (`source: "manual"`, `emailVerified: false`).
-- **Errors:**
-  - `409 CONFLICT`: Email already exists on this prospect.
-  - `409 DO_NOT_CONTACT`: Prospect is marked Do Not Contact.
 
----
+Manual contact creation request:
+
+```json
+{
+  "fullName": "Pat Lee",
+  "jobTitle": "CTO",
+  "businessEmail": "pat@example.com",
+  "linkedinUrl": "https://www.linkedin.com/in/pat"
+}
+```
+
+`fullName` required (1–120 characters), `businessEmail` required and valid; `jobTitle` optional (max 120); `linkedinUrl` optional HTTP(S) URL (max 300). Success: `201 { "data": DecisionMaker }`. Server sets `source="manual"` and `emailVerified=false`. Duplicate email for the same prospect returns `409 CONFLICT`; DNC prospect returns `409 DO_NOT_CONTACT`.
+
+### `POST /api/v1/prospects/:id/decision-makers/search`
+
+No body; currently `503 CAPABILITY_DISABLED` (`search_people`).
 
 ### `POST /api/v1/decision-makers/:id/enrich`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `contact:enrich`. 💰 Paid: Apollo (`enrich`). 🔌 Capability-gated: `enrich`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Retrieves verified business email for decision maker from Apollo.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns updated `Contact` with `businessEmail` and `emailVerified`.
-- **Errors:**
-  - `409 INVALID_STATE`: Contact already has a verified email.
-  - `409 DO_NOT_CONTACT`: Prospect or contact is suppressed.
 
----
+No body; currently `503 CAPABILITY_DISABLED` (`enrich`).
 
 ### `POST /api/v1/decision-makers/:id/do-not-contact`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `prospect:mark_dnc`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns updated `Contact` with `outreachStatus: "do_not_contact"`.
 
----
+No body; success `200 { "data": DecisionMaker }` after setting that contact's outreach status to DNC.
 
-## 11. Campaigns
+### `GET /api/v1/prospects/:id/signals`
+
+Optional query `status=active|dismissed|stale`. Success: `{ "data": Signal[] }`. An active signal older than 45 days is returned with derived status `stale`; the record need not be updated to display this derived state.
+
+### `POST /api/v1/prospects/:id/signals/detect`
+
+No body. Success: `{ "data": { "created": n, "signals": Signal[], "message"?: "No new evidence-backed signals found in available data" } }`. Current detector uses evidence already stored (notably recorded technology data); it does not invent funding, growth or buyer intent. Repeated identical evidence is deduplicated.
+
+### `POST /api/v1/prospects/:id/signals/interpret`
+
+No body; currently `503 CAPABILITY_DISABLED` (`signal_interpret`).
+
+### `POST /api/v1/signals/:id/dismiss`
+
+No body; success `200 { "data": Signal }`. Evidence is retained.
+
+`Signal` fields include `id`, `prospectId`, optional `decisionMakerId`, `signalType`, `description`, `evidence`, `confidence`, `status`, `detectedAt`, `createdAt`, `updatedAt`.
+
+## 8. Campaigns and messages
+
+### Campaign DTO
+
+Campaign fields: `id`, `icpId`, `name`, `channel` (`email`), `status`, optional `approvedBy`, `approvedAt`, `createdBy`, `createdAt`, `updatedAt`. `GET /campaigns/:id` also returns `messageCounts`.
+
+Campaign statuses accepted by the list filter: `draft`, `pending_approval`, `approved`, `active`, `paused`, `completed`, `cancelled`.
 
 ### `POST /api/v1/campaigns`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `message:draft`. CSRF check enforced.
-- **Description:** Creates an email outreach campaign container in `draft` status.
-- **Request Body (`application/json`):**
-  - `icpId`: 24-character ObjectId string.
-  - `name`: string, 1–80 characters, trimmed.
-  - `channel`: literal `"email"` (other channels return `422`).
-- **Response `201`:** Returns created `Campaign` with `status: "draft"`.
 
----
+Request: `{ "icpId": "<ObjectId>", "name": "Campaign name", "channel": "email" }`; name 1–80 characters. Success `201 { "data": Campaign }`. The ICP must belong to this workspace and be active.
 
 ### `GET /api/v1/campaigns`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Query Parameters:**
-  - `status`?: enum (`draft` | `pending_approval` | `approved` | `active` | `paused` | `completed` | `cancelled`).
-  - `sort`?: enum (`createdAt` | `-createdAt`, default `-createdAt`).
-  - `page`?: integer >= 1 (default 1).
-  - `limit`?: integer 1–100 (default 20).
-- **Response `200`:** Returns `{ data: Campaign[], meta }`.
 
----
+Optional query: `status`, `sort=createdAt|-createdAt` (default `-createdAt`), `page` (default 1), `limit` (default 20, maximum 100). Success: `200 { "data": Campaign[], "meta": { "page", "limit", "total" } }`.
 
 ### `GET /api/v1/campaigns/:id`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Params:** `id`: 24-character ObjectId string.
-- **Response `200`:** Returns `Campaign` object with aggregated message counts by status.
 
----
+Success: `200 { "data": CampaignWithMessageCounts }`.
 
 ### `PATCH /api/v1/campaigns/:id`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `message:draft`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Renames a campaign. Allowed only while campaign is in `draft` status.
-- **Request Body (`application/json`):**
-  - `name`: string, 1–80 characters (required).
-- **Response `200`:** Returns updated `Campaign`.
-- **Errors:**
-  - `409 INVALID_STATE`: Campaign has already progressed past `draft`.
 
----
+Request: `{ "name": "Updated name" }`; only draft campaigns can be renamed. Success: `{ "data": Campaign }`.
 
-### `POST /api/v1/campaigns/:id/submit`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `message:draft`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Transitions campaign from `draft` to `pending_approval`.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns updated `Campaign` with `status: "pending_approval"`.
+### Campaign state actions
 
----
+The following endpoints take an empty JSON object `{}` (send it explicitly if your client attaches a body):
 
-### `POST /api/v1/campaigns/:id/approve`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `campaign:approve` (`owner`, `admin`). CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Approves campaign: `pending_approval` → `approved`. Sets `approvedBy` and `approvedAt`.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns updated `Campaign` with `status: "approved"`.
+- `POST /api/v1/campaigns/:id/submit` → draft to pending approval.
+- `POST /api/v1/campaigns/:id/approve` → approve campaign.
+- `POST /api/v1/campaigns/:id/pause`.
+- `POST /api/v1/campaigns/:id/resume`.
+- `POST /api/v1/campaigns/:id/complete`.
+- `POST /api/v1/campaigns/:id/cancel`.
 
----
+Success response for each: `{ "data": Campaign }`. State transitions are validated server-side; refresh the resource after `409 INVALID_STATE`.
 
-### `POST /api/v1/campaigns/:id/pause`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `campaign:approve`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Pauses active outreach: `active` → `paused`. Blocks new drafts and handoffs.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns updated `Campaign` with `status: "paused"`.
+### Message DTO
 
----
+Message fields: `id`, `campaignId`, `prospectId`, `decisionMakerId`, `step`, `revision`, optional `subject`, `body`, `approvalStatus`, optional `approvedBy`, `approvedAt`, `status`, optional `sentAt`, `createdBy`, `createdAt`, `updatedAt`.
 
-### `POST /api/v1/campaigns/:id/resume`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `campaign:approve`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Resumes paused campaign: `paused` → `active`.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns updated `Campaign` with `status: "active"`.
-
----
-
-### `POST /api/v1/campaigns/:id/complete`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `campaign:approve`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Marks outreach cycle completed: `active` | `paused` → `completed`. Terminal state.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns updated `Campaign` with `status: "completed"`.
-
----
-
-### `POST /api/v1/campaigns/:id/cancel`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `campaign:approve`. CSRF check enforced.
-- **Description:** Cancels campaign from any non-terminal state. Cascades cancellation to all unsent draft messages.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns updated `Campaign` with `status: "cancelled"`.
-
----
-
-## 12. Messages (Draft-First Outreach)
+Approval status values: `pending`, `approved`, `rejected`, `revision_requested`. Message status values: `draft`, `ready`, `handed_off`, `user_reported_sent`, `cancelled`.
 
 ### `POST /api/v1/messages/draft`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `message:draft`. 💰 Paid: LLM. 📈 Entitlement: `emails`. CSRF check enforced.
-- **Description:** Generates an AI outreach draft.
-  - **Idempotency:** Repeated requests with identical `(campaignId, decisionMakerId, step)` return the existing draft with `200` and write **no** new ledger row.
-  - **Regeneration:** If `regenerate=true`, rewrites the existing draft in-place, increments `revision`, and resets approval to `pending`. Allowed only while `approvalStatus != 'approved'`.
-  - **Preconditions:** Campaign not terminal; contact has `businessEmail` (`422`); prospect/contact not DNC (`409 DO_NOT_CONTACT`).
-- **Request Body (`application/json`):**
-  - `campaignId`: 24-character ObjectId string.
-  - `decisionMakerId`: 24-character ObjectId string.
-  - `step`?: integer 1–5 (default 1).
-  - `regenerate`?: boolean (default false).
-- **Response `201` (created) / `200` (idempotent / regenerated):**
+
+Request:
+
 ```json
 {
-  "data": {
-    "id": "665a9...",
-    "campaignId": "665a0...",
-    "prospectId": "665d1...",
-    "decisionMakerId": "665f1...",
-    "step": 1,
-    "revision": 1,
-    "subject": "Quick question regarding CloudScale's hiring plans",
-    "body": "Hi Sarah,\n\nNoticed your recent Kubernetes rollout...",
-    "approvalStatus": "pending",
-    "status": "draft",
-    "createdBy": "664f9...",
-    "createdAt": "2026-10-11T10:00:00.000Z",
-    "updatedAt": "2026-10-11T10:00:00.000Z"
-  }
+  "campaignId": "<ObjectId>",
+  "decisionMakerId": "<ObjectId>",
+  "step": 1,
+  "regenerate": false
 }
 ```
 
----
+`step` is integer 1–5, default 1; `regenerate` defaults false. Success: `201 { "data": Message }` when a new draft is created, or `200 { "data": Message }` when the idempotent existing draft is returned. The idempotency key is per workspace/campaign/contact/step. Regeneration is allowed only before approval. The mock drafter is a fixture, not live AI output; live LLM use is gated by approved configuration/estimate.
 
 ### `GET /api/v1/messages`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Query Parameters:**
-  - `campaignId`?: 24-character ObjectId.
-  - `prospectId`?: 24-character ObjectId.
-  - `decisionMakerId`?: 24-character ObjectId.
-  - `approvalStatus`?: enum (`pending` | `approved` | `rejected` | `revision_requested`).
-  - `status`?: enum (`draft` | `ready` | `handed_off` | `user_reported_sent` | `cancelled`).
-  - `sort`?: enum (`createdAt` | `-createdAt`, default `-createdAt`).
-  - `page`?: integer >= 1 (default 1).
-  - `limit`?: integer 1–100 (default 20).
-- **Response `200`:** Returns `{ data: Message[], meta }`.
 
----
+Optional query: `campaignId`, `prospectId`, `decisionMakerId`, `approvalStatus`, `status`, `sort=createdAt|-createdAt` (default `-createdAt`), `page` (default 1), `limit` (default 20, maximum 100). Success: `{ "data": Message[], "meta": { "page", "limit", "total" } }`.
 
 ### `GET /api/v1/messages/:id`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Params:** `id`: 24-character ObjectId string.
-- **Response `200`:** Returns `Message` object.
 
----
+Success: `{ "data": Message }`.
 
 ### `PATCH /api/v1/messages/:id`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `message:edit`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Founder edits subject or body. **Rule:** Any edit automatically resets `approvalStatus = 'pending'`, `status = 'draft'`, and clears `approvedBy/At`. Blocked once `handed_off` or later (`409 INVALID_STATE`).
-- **Request Body (`application/json`):**
-  - `subject`?: string, 1–200 characters.
-  - `body`?: string, 1–5000 characters.
-  - At least one of `subject` or `body` must be provided.
-- **Response `200`:** Returns updated `Message`.
 
----
+Request accepts one or both fields: `subject` (1–200 characters) and `body` (1–5000 characters). At least one must be present. Success: `{ "data": Message }` when editing is valid for the message state.
 
-### `POST /api/v1/messages/:id/approve`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `message:approve` (`owner`, `admin`). CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Sets `approvalStatus = 'approved'` and `status = 'ready'`.
-- **Preconditions:** Subject & body non-empty (`422`); campaign `approved` or `active` (`409 INVALID_STATE`); contact not DNC (`409 DO_NOT_CONTACT`).
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns updated `Message`.
+### Message review actions
 
----
+- `POST /api/v1/messages/:id/approve` with `{}` → `{ "data": Message }`.
+- `POST /api/v1/messages/:id/reject` with `{ "reason"?: "..." }` (optional, maximum 300 characters).
+- `POST /api/v1/messages/:id/request-revision` with `{ "note": "..." }` (required, 1–500 characters).
+- `POST /api/v1/messages/:id/cancel` with `{}`.
 
-### `POST /api/v1/messages/:id/reject`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `message:approve`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Request Body (`application/json`):**
-  - `reason`?: string, max 300 characters.
-- **Response `200`:** Returns updated `Message` with `approvalStatus: "rejected"`.
-
----
-
-### `POST /api/v1/messages/:id/request-revision`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `message:approve`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Request Body (`application/json`):**
-  - `note`: string, 1–500 characters (required feedback).
-- **Response `200`:** Returns updated `Message` with `approvalStatus: "revision_requested"`.
-
----
+All return `{ "data": Message }` on success. The schema does not persist rejection reasons or revision notes; the input is validated but not stored. Approval and DNC constraints are server-enforced.
 
 ### `POST /api/v1/messages/:id/handoff`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `message:handoff`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Verifies approval and transitions message: `ready` → `handed_off`. Generates mailto payload and logs a `handoff_requested` activity. The client constructs the local email client link. Calling repeatedly on a `handed_off` message is allowed.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:**
+
+Request body: `{}`. Message must be approved, campaign approved/active, contact not suppressed, and recipient/subject/body present. Success:
+
 ```json
 {
   "data": {
-    "message": { "id": "665a9...", "status": "handed_off" },
-    "handoff": {
-      "to": "sarah@cloudscale.co.uk",
-      "subject": "Quick question regarding CloudScale's hiring plans",
-      "body": "Hi Sarah,\n\nNoticed your recent Kubernetes rollout..."
-    }
+    "message": { "id": "...", "status": "handed_off" },
+    "handoff": { "to": "person@example.com", "subject": "...", "body": "..." }
   }
 }
 ```
-- **Errors:**
-  - `409 APPROVAL_REQUIRED`: Message has not been approved.
-  - `409 DO_NOT_CONTACT`: Prospect or contact suppressed.
 
----
+The backend records `handoff_requested`. The frontend should construct a `mailto:` URL from `handoff.to`, `handoff.subject`, and `handoff.body` and open it from the user's click. The backend does not send an email and cannot confirm that the mail client opened, the user sent it, or delivery occurred.
 
 ### `POST /api/v1/messages/:id/mark-sent`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `message:handoff`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Founder confirms they sent the email from their local mail client: `handed_off` → `user_reported_sent`. Sets `sentAt` timestamp.
-- **Request Body (`application/json`):**
-  - `sentAt`?: string, ISO-8601 date string (not in the future, not prior to handoff).
-- **Response `200`:** Returns updated `Message` with `status: "user_reported_sent"`.
 
----
+Request: `{ "sentAt"?: "2026-10-11T10:00:00.000Z" }`; if provided it must include a timezone and cannot be in the future or predate handoff. Success `{ "data": Message }`. This stores a founder-reported send event only; it is not delivery telemetry.
 
-### `POST /api/v1/messages/:id/cancel`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `message:edit`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Cancels message before handoff: `draft`|`ready` → `cancelled`.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns updated `Message` with `status: "cancelled"`.
-
----
-
-## 13. Activity & Replies
+## 9. Activity, reply logging and next-best actions
 
 ### `GET /api/v1/activities`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Query Parameters:**
-  - `prospectId`?: 24-character ObjectId.
-  - `messageId`?: 24-character ObjectId.
-  - `type`?: string (comma-separated list of valid `activityType` values).
-  - `from`?: ISO-8601 UTC date string.
-  - `to`?: ISO-8601 UTC date string (`to >= from`).
-  - `sort`?: enum (`-occurredAt` | `occurredAt`, default `-occurredAt`).
-- **Description:** Append-only workspace audit trail. Update and delete endpoints do not exist.
-- **Response `200`:** Returns `{ data: Activity[] }`.
 
----
+Optional query fields: `prospectId`, `messageId`, `type` (comma-separated; accepted values `prospect_discovered`, `contact_added`, `contact_enriched`, `score_updated`, `signal_detected`, `message_approved`, `handoff_requested`, `message_user_reported_sent`, `reply_logged`, `reply_classified`, `status_changed`, `integration_error`), `from`, `to` (ISO date-time with timezone), `sort=occurredAt|-occurredAt` (default `-occurredAt`). Returns `{ "data": Activity[] }`, limited to 100 records; no pagination parameters are part of the current validator.
+
+Activity fields: `id`, `prospectId`, optional `campaignId`, `messageId`, `activityType`, `summary`, optional `classification`, `metadata`, `occurredAt`, `createdAt`.
 
 ### `POST /api/v1/activities/replies`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `activity:log`. 💰 Paid: LLM (`classify_reply`). CSRF check enforced.
-- **Description:** Founder pastes an inbound email reply.
-  - **Deterministic Keyword Pre-check:** If text contains unsubscribe keywords (e.g. "unsubscribe", "stop", "remove me"), sets prospect and contact to `do_not_contact` and cancels unsent drafts, even if the LLM call fails.
-  - **AI Classification:** Categorizes intent (`meeting_requested`, `info_requested`, `not_interested`, `unsubscribe`, `other`) and confidence score. Creates a recommended next action.
-  - **Fallback:** If LLM call times out or fails (`502`), the reply is still saved as `reply_logged` with `classification: null`.
-- **Request Body (`application/json`):**
-  - `prospectId`: 24-character ObjectId string.
-  - `messageId`?: 24-character ObjectId string.
-  - `text`: string, 1–5000 characters (pasted reply text).
-- **Response `201`:**
+
+Request:
+
 ```json
-{
-  "data": {
-    "reply": {
-      "id": "665e0...",
-      "activityType": "reply_logged",
-      "summary": "Founder pasted email reply",
-      "occurredAt": "2026-10-11T10:30:00.000Z"
-    },
-    "classification": {
-      "id": "665e1...",
-      "activityType": "reply_classified",
-      "classification": { "intent": "meeting_requested", "confidence": 0.95 }
-    },
-    "effects": [
-      { "type": "next_action_created", "id": "665f9..." }
-    ]
-  }
-}
+{ "prospectId": "<ObjectId>", "messageId": "<ObjectId, optional>", "text": "Founder-pasted reply text" }
 ```
 
----
+`text` is required, 1–5000 characters. Success: `201 { "data": { "reply": Activity, "classification": Activity | null, "effects": [] } }`.
 
-## 14. Next Best Actions
+Important limits:
+- The text is manually supplied by the founder. There is no inbox synchronization or automatic reply detection.
+- Only a sanitized excerpt (maximum 500 characters) is persisted in the activity summary; the full submitted reply text is not retained in the current schema.
+- In mock mode, classification is a deterministic keyword fixture. With live configuration unavailable, `classification` may be `null` while the reply is still recorded.
+- Unsubscribe wording triggers deterministic DNC handling independent of classifier availability and may cancel unsent messages.
 
 ### `GET /api/v1/next-actions`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Query Parameters:**
-  - `status`?: enum (`pending` | `accepted` | `dismissed` | `completed` | `expired`, default `pending`).
-  - `prospectId`?: 24-character ObjectId.
-  - `sort`?: literal `priority` (high priority first, then earliest `dueAt`).
-- **Description:** Lazily refreshes rule-based recommendations before reading. Stale actions past `expiresAt` return as `expired`. Uses templated fallback text if LLM budget is exhausted; **never fails with `BUDGET_EXHAUSTED`**.
-- **Response `200`:**
-```json
-{
-  "data": [
-    {
-      "id": "665f9...",
-      "prospectId": "665d1...",
-      "actionType": "handoff_message",
-      "title": "Send approved follow-up to Sarah Connor",
-      "reason": "Draft was approved 2 hours ago",
-      "priority": "high",
-      "status": "pending",
-      "dueAt": "2026-10-11T12:00:00.000Z",
-      "createdAt": "2026-10-11T10:00:00.000Z"
-    }
-  ],
-  "meta": { "total": 1 }
-}
-```
 
----
+Query: `status=pending|accepted|dismissed|completed|expired` (default `pending`), optional `prospectId`, `sort=priority` (only supported sort). Success: `200 { "data": NextAction[], "meta": { "limit": 100, "total": n } }`. The route accepts no page/limit parameters.
 
-### `POST /api/v1/next-actions/:id/accept`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `nba:act`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Marks action accepted (`pending` → `accepted`). Performs no external action; returns a UI route hint for the founder.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:**
-```json
-{
-  "data": { "id": "665f9...", "status": "accepted" },
-  "next": { "route": "/messages/665a9..." }
-}
-```
+NextAction fields include `id`, `prospectId`, optional `decisionMakerId`, `actionType`, `title`, `reason`, `priority`, `status`, optional `dueAt`, `expiresAt`, `basedOnActivityIds`, `createdAt`, `updatedAt`. Action types: `follow_up`, `send_reply`, `share_information`, `book_meeting`, `nurture`, `stop_outreach`, `review_prospect`; priority: `low|medium|high`.
 
----
+Listing next actions may lazily generate a follow-up recommendation when an explicit handoff or founder-reported send older than three days is recorded and no later reply exists. It does not schedule, send or automate the follow-up.
 
-### `POST /api/v1/next-actions/:id/dismiss`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `nba:act`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Request Body (`application/json`):**
-  - `reason`?: string, max 200 characters.
-- **Response `200`:** Returns updated `NextAction` with `status: "dismissed"`.
+- `POST /api/v1/next-actions/:id/accept` with `{}` → `{ "data": NextAction, "next": { "route": "..." } }`.
+- `POST /api/v1/next-actions/:id/dismiss` with `{ "reason"?: "..." }` (maximum 200 characters) → `{ "data": NextAction }`.
+- `POST /api/v1/next-actions/:id/complete` with `{}` → `{ "data": NextAction }`.
 
----
+The dismissal `reason` is currently validated but not persisted because the frozen collection has no reason/note field. Accepting an action does not itself execute the recommended action.
 
-### `POST /api/v1/next-actions/:id/complete`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `nba:act`. CSRF check enforced.
-- **Params:** `id`: 24-character ObjectId string.
-- **Description:** Transitions action from `pending` or `accepted` to `completed`.
-- **Request Body (`application/json`):** `{}` (strict empty object).
-- **Response `200`:** Returns updated `NextAction` with `status: "completed"`.
+## 10. Dashboard and usage
 
----
+### `GET /api/v1/dashboard`
 
-## 15. Usage Ledger & Dashboard
+No query parameters or body. Success: `{ "data": { "today": {...}, "funnel": {...}, "topActions": NextAction[], "usage": { "remainingPaise", "trialDaysLeft" } } }`.
+
+`today` reports `prospectsFound`, `hotAndHigh`, `draftsPendingApproval`, `readyForHandoff`, and `followUpsDue`. `funnel` reports `discovered`, `qualified`, `contactsWithEmail`, `approvedDrafts`, `handedOff`, `userReportedSent`, and `repliesLogged`. Metrics describe recorded backend data only; they do not mean email delivery/open/reply was externally verified.
 
 ### `GET /api/v1/usage/summary`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Description:** Returns real-time API budget spend and entitlement usage counters for the active workspace. All monetary amounts are integer paise.
-- **Response `200`:**
+
+No query parameters or body. Success:
+
 ```json
 {
   "data": {
     "plan": "trial",
-    "trialEndsAt": "2026-10-26T07:00:00.000Z",
-    "trialDaysLeft": 15,
+    "trialEndsAt": "...",
+    "trialDaysLeft": 0,
     "spend": {
-      "capPaise": 100000,
-      "committedPaise": 3600,
+      "capPaise": 0,
+      "committedPaise": 0,
       "reservedPaise": 0,
-      "remainingPaise": 96400,
+      "remainingPaise": 0,
       "costType": "estimated"
     },
     "entitlements": {
-      "prospects": { "used": 18, "limit": 50 },
-      "dmSearches": { "used": 2, "limit": 30 },
-      "emails": { "used": 1, "limit": 15 },
-      "icps": { "used": 1, "limit": 1 }
+      "prospects": { "used": 0, "limit": null },
+      "dmSearches": { "used": 0, "limit": null },
+      "emails": { "used": 0, "limit": null },
+      "icps": { "used": 0, "limit": null }
     }
   }
 }
 ```
 
----
+The numbers above are shape placeholders only. The cap comes from the workspace's stored configuration and owner-frozen setting; do not use placeholder numbers as limits. Entitlement limits are currently `null` because the owner has not frozen numeric limits. `trialDaysLeft` may also be `null` for a non-trial plan.
 
 ### `GET /api/v1/usage/records`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Query Parameters:**
-  - `provider`?: enum (`apollo` | `llm`).
-  - `operation`?: string, 1–120 characters (e.g. `apollo.org_search`, `llm.draft_message`).
-  - `status`?: enum (`success` | `failed` | `blocked`).
-  - `from`?: ISO-8601 UTC date string.
-  - `to`?: ISO-8601 UTC date string (`to >= from`).
-  - `page`?: integer >= 1 (default 1).
-  - `limit`?: integer 1–100 (default 20).
-- **Description:** Paginated audit ledger. Scoped strictly to the active workspace. Cross-tenant records cannot be accessed.
-- **Response `200`:**
-```json
-{
-  "data": [
-    {
-      "id": "665e7...",
-      "provider": "llm",
-      "operation": "llm.draft_message",
-      "status": "success",
-      "costPaise": 120,
-      "costType": "estimated",
-      "occurredAt": "2026-10-11T10:00:00.000Z"
-    }
-  ],
-  "meta": { "page": 1, "limit": 20, "total": 1 }
-}
-```
 
----
+Optional query fields: `provider=apollo|llm`, `operation` (1–120 characters), `status=success|failed|blocked`, `from`, `to` (date/time values), `page` (default 1), `limit` (default 20, max 100). `from` must be earlier than or equal to `to`.
 
-### `GET /api/v1/dashboard`
-- **Access:** Authenticated user, `X-Startup-Id`. Permission: `workspace:read`.
-- **Description:** Aggregates top-level operational metrics, founder sales funnel counts, and top next actions for dashboard display.
-- **Response `200`:**
-```json
-{
-  "data": {
-    "today": {
-      "prospectsFound": 25,
-      "hotAndHigh": 12,
-      "draftsPendingApproval": 4,
-      "readyForHandoff": 6,
-      "followUpsDue": 3
-    },
-    "funnel": {
-      "discovered": 25,
-      "qualified": 12,
-      "contactsWithEmail": 9,
-      "approvedDrafts": 6,
-      "handedOff": 5,
-      "userReportedSent": 3,
-      "repliesLogged": 1
-    },
-    "topActions": [
-      {
-        "id": "665f9...",
-        "actionType": "handoff_message",
-        "title": "Send approved follow-up to Sarah Connor",
-        "priority": "high",
-        "status": "pending"
-      }
-    ],
-    "usage": {
-      "remainingPaise": 96400,
-      "trialDaysLeft": 15
-    }
-  }
-}
-```
+Success: `200 { "data": UsageRecord[], "meta": { "page", "limit", "total" } }`. Record fields include `id`, `provider`, `operation`, `status`, optional `creditsConsumed`, optional `costPaise`, `costType`, optional `errorCode`, `occurredAt`. Cost is estimated or provider-reported; render according to `costType`, not as a verified invoice amount.
 
----
+## 11. Deliberately absent or gated capabilities
 
-## 16. Endpoint-Level Permission and Flag Matrix
+These are not frontend promises and must not be implemented as if operational in this preview:
 
-| Endpoint | Method | Required Permission | 💰 Paid | 🔌 Capability Flag | 📈 Entitlement | Writes Ledger |
-|---|---|---|:---:|:---:|:---:|:---:|
-| `/health` | `GET` | None (Public) | — | — | — | — |
-| `/auth/register` | `POST` | None (Public) | — | — | — | — |
-| `/auth/login` | `POST` | None (Public) | — | — | — | — |
-| `/auth/me` | `GET` | Authenticated user | — | — | — | — |
-| `/auth/logout` | `POST` | Authenticated user | — | — | — | — |
-| `/startups` | `POST` | Signed-in user | — | — | — | — |
-| `/startups` | `GET` | Signed-in user | — | — | — | — |
-| `/startups/current` | `GET` | `workspace:read` | — | — | — | — |
-| `/startups/current` | `PATCH` | `workspace:settings` | — | — | — | — |
-| `/startups/current/members` | `GET` | `workspace:read` | — | — | — | — |
-| `/startups/current/members` | `POST` | `member:invite` | — | — | `maxUsers` | — |
-| `/startups/current/members/:id` | `PATCH` | `member:role` | — | — | — | — |
-| `/startups/current/members/:id` | `DELETE` | `member:role` | — | — | — | — |
-| `/icps/propose` | `POST` | `icp:write` | LLM | — | — | ✔ |
-| `/icps` | `POST` | `icp:write` | — | — | `maxIcps` | — |
-| `/icps` | `GET` | `workspace:read` | — | — | — | — |
-| `/icps/:id` | `GET` | `workspace:read` | — | — | — | — |
-| `/icps/:id` | `PATCH` | `icp:write` | — | — | — | — |
-| `/icps/:id/archive` | `POST` | `icp:write` | — | — | — | — |
-| `/prospects/search` | `POST` | `prospect:search` | Apollo | `search_orgs` | `prospects` | ✔ |
-| `/prospects` | `GET` | `workspace:read` | — | — | — | — |
-| `/prospects/select` | `POST` | `prospect:search` | — | — | — | — |
-| `/prospects/:id` | `GET` | `workspace:read` | — | — | — | — |
-| `/prospects/:id/disqualify` | `POST` | `prospect:search` | — | — | — | — |
-| `/prospects/:id/do-not-contact` | `POST` | `prospect:mark_dnc` | — | — | — | — |
-| `/prospects/:id/clear-do-not-contact` | `POST` | `prospect:clear_dnc` | — | — | — | — |
-| `/prospects/score` | `POST` | `prospect:score` | — | — | — | — |
-| `/prospects/:id/scores` | `GET` | `workspace:read` | — | — | — | — |
-| `/prospects/:id/scores/explain` | `POST` | `prospect:score` | LLM | — | — | ✔ |
-| `/prospects/:id/signals` | `GET` | `workspace:read` | — | — | — | — |
-| `/prospects/:id/signals/detect` | `POST` | `prospect:score` | — | — | — | — |
-| `/prospects/:id/signals/interpret` | `POST` | `prospect:score` | LLM | — | — | ✔ |
-| `/signals/:id/dismiss` | `POST` | `prospect:score` | — | — | — | — |
-| `/prospects/:id/decision-makers` | `GET` | `workspace:read` | — | — | — | — |
-| `/prospects/:id/decision-makers/search` | `POST` | `contact:enrich` | Apollo | `search_people` | `dmSearches` | ✔ |
-| `/prospects/:id/decision-makers` | `POST` | `contact:enrich` | — | — | — | — |
-| `/decision-makers/:id/enrich` | `POST` | `contact:enrich` | Apollo | `enrich` | — | ✔ |
-| `/decision-makers/:id/do-not-contact` | `POST` | `prospect:mark_dnc` | — | — | — | — |
-| `/campaigns` | `POST` | `message:draft` | — | — | — | — |
-| `/campaigns` | `GET` | `workspace:read` | — | — | — | — |
-| `/campaigns/:id` | `GET` | `workspace:read` | — | — | — | — |
-| `/campaigns/:id` | `PATCH` | `message:draft` | — | — | — | — |
-| `/campaigns/:id/submit` | `POST` | `message:draft` | — | — | — | — |
-| `/campaigns/:id/approve` | `POST` | `campaign:approve` | — | — | — | — |
-| `/campaigns/:id/pause` | `POST` | `campaign:approve` | — | — | — | — |
-| `/campaigns/:id/resume` | `POST` | `campaign:approve` | — | — | — | — |
-| `/campaigns/:id/complete` | `POST` | `campaign:approve` | — | — | — | — |
-| `/campaigns/:id/cancel` | `POST` | `campaign:approve` | — | — | — | — |
-| `/messages/draft` | `POST` | `message:draft` | LLM | — | `emails` | ✔ |
-| `/messages` | `GET` | `workspace:read` | — | — | — | — |
-| `/messages/:id` | `GET` | `workspace:read` | — | — | — | — |
-| `/messages/:id` | `PATCH` | `message:edit` | — | — | — | — |
-| `/messages/:id/approve` | `POST` | `message:approve` | — | — | — | — |
-| `/messages/:id/reject` | `POST` | `message:approve` | — | — | — | — |
-| `/messages/:id/request-revision` | `POST` | `message:approve` | — | — | — | — |
-| `/messages/:id/handoff` | `POST` | `message:handoff` | — | — | — | — |
-| `/messages/:id/mark-sent` | `POST` | `message:handoff` | — | — | — | — |
-| `/messages/:id/cancel` | `POST` | `message:edit` | — | — | — | — |
-| `/activities` | `GET` | `workspace:read` | — | — | — | — |
-| `/activities/replies` | `POST` | `activity:log` | LLM | — | — | ✔ |
-| `/next-actions` | `GET` | `workspace:read` | best-effort LLM | — | — | — |
-| `/next-actions/:id/accept` | `POST` | `nba:act` | — | — | — | — |
-| `/next-actions/:id/dismiss` | `POST` | `nba:act` | — | — | — | — |
-| `/next-actions/:id/complete` | `POST` | `nba:act` | — | — | — | — |
-| `/usage/summary` | `GET` | `workspace:read` | — | — | — | — |
-| `/usage/records` | `GET` | `workspace:read` | — | — | — | — |
-| `/dashboard` | `GET` | `workspace:read` | — | — | — | — |
+- Live Apollo organization discovery (`search_orgs`), people search (`search_people`) and contact enrichment (`enrich`) are disabled until capability and commercial terms are verified.
+- Live LLM use, including ICP proposal, message drafting and signal interpretation, remains gated where adapters/approved cost estimates are absent. Mock responses must be visibly treated as demo fixtures, not production AI analysis.
+- No server-side email sending, Apollo sequences, delivery/open tracking, inbox synchronization, calendar booking, cron jobs, or automatic follow-up sending.
+- No CRUD endpoints for raw activity or next-action creation; these are generated/recorded through implemented workflows.
 
----
+## 12. Frontend acceptance checklist
 
-## 17. Tenant and security rules visible in the contract
-- Any path ID belonging to another startup returns `404 NOT_FOUND`, identical to a missing ID.
-- Body IDs that reference another startup's records (e.g. `icpId`, `campaignId`, `decisionMakerId`) return `422 VALIDATION_FAILED` with `details.path` (never revealing the other tenant's data).
-- Clients cannot send or influence: `startupId`, `role`, `approvalStatus` (except via action endpoints), `approvedBy/At`, `status` (except via action endpoints), spend fields, `criteriaVersion`, `source`, `idempotencyKey`.
-- Inactive memberships, disabled users, and expired trials follow `BACKEND_ARCHITECTURE §5.1`.
+- [ ] Central API client uses `credentials: 'include'`, includes `x-startup-id` on tenant routes, and includes `X-Requested-With: XMLHttpRequest` on every non-GET request.
+- [ ] Login/logout state is derived from API responses; frontend never handles JWTs directly.
+- [ ] On workspace switch, update `x-startup-id` for subsequent tenant requests and reload tenant-scoped data.
+- [ ] All list screens use the documented query names and honor each endpoint's actual `meta` shape.
+- [ ] Error handling branches on status and `error.code`, particularly `NOT_A_MEMBER`, `INVALID_STATE`, `APPROVAL_REQUIRED`, `DO_NOT_CONTACT`, `PLAN_LIMIT_REACHED`, `TRIAL_EXPIRED`, and `CAPABILITY_DISABLED`.
+- [ ] Disabled provider actions show an intentional unavailable state; no optimistic fake Apollo/LLM results are added by the frontend.
+- [ ] The email handoff is a user-initiated `mailto:` operation; UI never labels handoff as sent or delivered. `mark-sent` means founder-reported only.
+- [ ] No new API calls are introduced without updating and approving this frozen document first.
+- [ ] The score-explanation action shows a mock/demo label, handles 404 and 503 safely, and confirms numeric scores/categories remain unchanged.
 
----
+## 13. Change log
 
-## 18. Frontend integration notes
-1. **API Client Wrapper:** Automatically injects `X-Startup-Id` and `X-Requested-With`, unwraps `data`, and throws a typed `ApiError { code, message, details, requestId }`.
-2. **Global Error Mapping:** Maps codes per §1.5 (401 → login redirect, `TRIAL_EXPIRED` / `BUDGET_EXHAUSTED` → persistent banner, `CAPABILITY_DISABLED` → fallback UI).
-3. **Traceability:** Always display `requestId` on 500 / 502 error toasts to facilitate debugging.
-4. **Role Gating:** Disable UI buttons for actions the caller's role cannot perform (while relying on strict server-side authorization).
-5. **No Polling:** All endpoints are synchronous request / response; discovery results paginate page-by-page.
-6. **Wording Standards:** "Opening your email app" (handoff), "Marked as sent by you" (mark-sent), spend as "approx.", scores as "estimate".
-
----
-
-## 19. Contract tests (required)
-- **Every Endpoint:** Verify success shape, listed error codes, unknown-field rejection (`422`), and malformed ObjectId handling (`400`).
-- **Tenant Isolation:** Startup B receives `404` on every `:id` route for Startup A's resources; cross-tenant body references return `422`.
-- **RBAC:** Every permission-gated endpoint is tested with `owner`, `admin`, and `member` roles.
-- **Capability Gating:** Disabled capability returns `503` without writing a ledger row or reserving budget.
-- **Idempotency:** Identical message draft request returns `200` and the existing message ID.
-- **Edit After Approve:** Editing an approved message resets status to `pending` / `draft`.
-- **Handoff Preconditions:** Blocked when unapproved, DNC, or campaign not approved/active.
-- **Pagination Bounds:** Query limit exceeding 100 returns `422`.
-
----
-
-## 20. Versioning and change policy
-- Additive changes (new optional fields, new endpoints) stay in `v1`. Removing or renaming fields, or changing semantics, requires `v2`.
-- Clients must ignore unknown response fields.
-- Every change updates this file, the Zod validators, and the contract tests in one PR, with a `DECISIONS.md` entry if it changes behaviour.
-
----
-
-## 21. Open items
-1. Freeze the trial spend cap (`TRIAL_SPEND_CAP_PAISE`) before deployment. Numeric values in response examples are illustrative only; config, UI, and tests must use the owner-frozen value.
-2. Status code `402` is standard for plan/budget limits.
-3. Confirm the invite flow (existing users only) is acceptable for the pilot.
-4. After approval: generate `openapi.yaml` from this file and derive Zod validators from it.
-5. `AI_SERVICE_DESIGN.md` defines the exact outputs behind `propose`, `draft`, `explain`, `interpret`, and `classify`.
+- **v1.0 — 2026-10-11:** Frozen frontend integration reference for the M1–M7 MVP-preview implementation. Records only the implemented route surface and the provider/schema limitations that affect frontend behavior.
