@@ -10,6 +10,10 @@ export const scoringRepository = {
     return Icp.findOne({ _id: icpId, startupId });
   },
 
+  findProspect(startupId: Types.ObjectId, prospectId: Types.ObjectId) {
+    return Prospect.findOne({ _id: prospectId, startupId }).select('_id icpId').lean();
+  },
+
   findProspects(startupId: Types.ObjectId, prospectIds: Types.ObjectId[]) {
     // Tenant scope is part of the query; callers must validate the entire batch before writing.
     return Prospect.find({ startupId, _id: { $in: prospectIds } }).lean();

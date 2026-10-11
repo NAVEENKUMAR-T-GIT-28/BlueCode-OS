@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { ApiError } from '../shared/api-error.js';
-import { Prospect } from '../models/prospect.model.js';
+
 import { scoringRepository } from '../repositories/scoring.repository.js';
 import { scoreDeterministic, type ScoreCriteria, type ScoreFirmographics } from './deterministic-score.js';
 import { clock } from '../utils/clock.js';
@@ -110,7 +110,7 @@ export const scoringService = {
     const startupId = new Types.ObjectId(startupIdValue);
     const prospectId = new Types.ObjectId(prospectIdValue);
     // The prospect is looked up under startupId first, so foreign IDs remain indistinguishable from missing IDs.
-    const prospect = await Prospect.findOne({ _id: prospectId, startupId }).select('_id icpId').lean();
+    const prospect = await scoringRepository.findProspect(startupId, prospectId);
     if (!prospect) throw new ApiError(404, 'NOT_FOUND', 'Prospect not found');
 
     let icpId: Types.ObjectId | undefined;

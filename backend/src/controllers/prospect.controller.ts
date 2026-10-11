@@ -10,6 +10,7 @@ export const searchProspects: RequestHandler = async (req, res, next) => {
       icpId: req.body.icpId,
       page: req.body.page,
       perPage: req.body.perPage,
+      requestId: req.requestId,
     });
     res.json({ data });
   } catch (error) { next(error); }
