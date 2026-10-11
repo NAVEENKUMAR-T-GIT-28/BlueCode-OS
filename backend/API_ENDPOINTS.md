@@ -347,6 +347,7 @@ x-startup-id: 665a...
           "icp:write",
           "prospect:search",
           "prospect:score",
+          "contact:enrich",
           "prospect:mark_dnc",
           "prospect:clear_dnc"
         ]
@@ -448,6 +449,7 @@ curl http://localhost:4000/api/v1/startups/current \
           "icp:write",
           "prospect:search",
           "prospect:score",
+          "contact:enrich",
           "prospect:mark_dnc",
           "prospect:clear_dnc"
         ]
@@ -1601,7 +1603,7 @@ curl -X POST http://localhost:4000/api/v1/prospects/score \
 | Status | Code | Reason |
 |---|---|---|
 | 400 | `MALFORMED_REQUEST` | `id` or `icpId` is not a 24-character ObjectId |
-| 401 | `UNAUTHENTICATED` | Cookie missing or expired |
+| 401 | `UNAUTHENTICATED` | Session missing or expired |
 | 404 | `NOT_FOUND` | Prospect, ICP, or score not found |
 
 ### curl
@@ -1615,6 +1617,471 @@ curl http://localhost:4000/api/v1/prospects/665d1.../scores \
 curl "http://localhost:4000/api/v1/prospects/665d1.../scores?history=true&page=1&limit=10" \
   -H "x-startup-id: 665a..." \
   -b cookies.txt
+```
+
+---
+
+## 27. Contacts — List Decision Makers
+
+| | |
+|---|---|
+| **Method** | `GET` |
+| **URL** | `/api/v1/prospects/:id/decision-makers` |
+| **Auth required** | **Yes** — `bc_session` cookie |
+| **Tenant header** | **Yes** — `x-startup-id: <startupId>` |
+| **Permission** | `workspace:read` (`owner`, `admin`, `member`) |
+
+### Response `200`
+```json
+{
+  "data": [
+    {
+      "id": "665f1...",
+      "prospectId": "665d1...",
+      "fullName": "Pat Lee",
+      "jobTitle": "CTO",
+      "businessEmail": "pat@example.com",
+      "linkedinUrl": "https://www.linkedin.com/in/pat",
+      "emailVerified": false,
+      "source": "manual",
+      "outreachStatus": "not_contacted",
+      "createdAt": "2026-10-11T08:00:00.000Z",
+      "updatedAt": "2026-10-11T08:00:00.000Z"
+    }
+  ]
+}
+```
+
+### Errors
+| Status | Code | Reason |
+|---|---|---|
+| 400 | `MALFORMED_REQUEST` | Prospect ID is not a 24-character ObjectId |
+| 401 | `UNAUTHENTICATED` | Session missing or expired |
+| 404 | `NOT_FOUND` | Prospect not found in this workspace |
+
+### curl
+```bash
+curl http://localhost:4000/api/v1/prospects/665d1.../decision-makers \
+  -H "x-startup-id: 665a..." \
+  -b cookies.txt
+```
+
+---
+
+## 28. Contacts — Add Manual Contact
+
+| | |
+|---|---|
+| **Method** | `POST` |
+| **URL** | `/api/v1/prospects/:id/decision-makers` |
+| **Auth required** | **Yes** — `bc_session` cookie |
+| **Tenant header** | **Yes** — `x-startup-id: <startupId>` |
+| **Permission** | `contact:enrich` (`owner`, `admin`, `member`) |
+
+### Request Body (`application/json`)
+```json
+{
+  "fullName": "Pat Lee",
+  "jobTitle": "CTO",
+  "businessEmail": "pat@example.com",
+  "linkedinUrl": "https://www.linkedin.com/in/pat"
+}
+```
+
+| Field | Type | Rules |
+|---|---|---|
+| `fullName` | string | 1–120 chars, trimmed |
+| `jobTitle` | string | optional, 1–120 chars, trimmed |
+| `businessEmail` | string | valid email, max 254 chars (stored lowercased) |
+| `linkedinUrl` | string | optional HTTP or HTTPS URL, max 300 chars |
+
+> **Defaults applied:** `source="manual"`, `emailVerified=false`, `outreachStatus="not_contacted"`.  
+> An audit entry is automatically created in `sales_activities`.
+
+### Response `201`
+```json
+{
+  "data": {
+    "id": "665f1...",
+    "prospectId": "665d1...",
+    "fullName": "Pat Lee",
+    "jobTitle": "CTO",
+    "businessEmail": "pat@example.com",
+    "linkedinUrl": "https://www.linkedin.com/in/pat",
+    "emailVerified": false,
+    "source": "manual",
+    "outreachStatus": "not_contacted",
+    "createdAt": "2026-10-11T08:00:00.000Z",
+    "updatedAt": "2026-10-11T08:00:00.000Z"
+  }
+}
+```
+
+### Errors
+| Status | Code | Reason |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Invalid email format, invalid URL protocol, or extra fields |
+| 400 | `MALFORMED_REQUEST` | Prospect ID is not a 24-character ObjectId |
+| 401 | `UNAUTHENTICATED` | Session missing or expired |
+| 404 | `NOT_FOUND` | Prospect not found in this workspace |
+| 409 | `CONFLICT` | This business email already exists on this prospect |
+| 409 | `DO_NOT_CONTACT` | Cannot add contacts to a prospect marked `do_not_contact` |
+
+### curl
+```bash
+curl -X POST http://localhost:4000/api/v1/prospects/665d1.../decision-makers \
+  -H "Content-Type: application/json" \
+  -H "x-requested-with: XMLHttpRequest" \
+  -H "x-startup-id: 665a..." \
+  -b cookies.txt \
+  -d '{"fullName":"Pat Lee","jobTitle":"CTO","businessEmail":"pat@example.com","linkedinUrl":"https://www.linkedin.com/in/pat"}'
+```
+
+---
+
+## 29. Contacts — Search Decision Makers (Live Apollo Search)
+
+| | |
+|---|---|
+| **Method** | `POST` |
+| **URL** | `/api/v1/prospects/:id/decision-makers/search` |
+| **Auth required** | **Yes** — `bc_session` cookie |
+| **Tenant header** | **Yes** — `x-startup-id: <startupId>` |
+| **Permission** | `contact:enrich` (`owner`, `admin`, `member`) |
+
+### Request Body (`application/json`)
+```json
+{}
+```
+
+> **Capability Guard:** Live external Apollo people discovery is guarded by commercial safety controls until outbound credentials and capabilities are verified.
+
+### Response `503` (Capability Disabled)
+```json
+{
+  "code": "CAPABILITY_DISABLED",
+  "message": "People search is disabled until Apollo search_people is verified and enabled",
+  "details": {
+    "capability": "search_people"
+  }
+}
+```
+
+### curl
+```bash
+curl -X POST http://localhost:4000/api/v1/prospects/665d1.../decision-makers/search \
+  -H "Content-Type: application/json" \
+  -H "x-requested-with: XMLHttpRequest" \
+  -H "x-startup-id: 665a..." \
+  -b cookies.txt \
+  -d '{}'
+```
+
+---
+
+## 30. Contacts — Enrich Contact (Live Apollo Enrichment)
+
+| | |
+|---|---|
+| **Method** | `POST` |
+| **URL** | `/api/v1/decision-makers/:id/enrich` |
+| **Auth required** | **Yes** — `bc_session` cookie |
+| **Tenant header** | **Yes** — `x-startup-id: <startupId>` |
+| **Permission** | `contact:enrich` (`owner`, `admin`, `member`) |
+
+### Request Body (`application/json`)
+```json
+{}
+```
+
+> **Capability Guard:** Live Apollo email/phone enrichment is guarded by commercial safety controls until outbound credentials and capabilities are verified.
+
+### Response `503` (Capability Disabled)
+```json
+{
+  "code": "CAPABILITY_DISABLED",
+  "message": "Contact enrichment is disabled until Apollo enrich is verified and enabled",
+  "details": {
+    "capability": "enrich"
+  }
+}
+```
+
+### curl
+```bash
+curl -X POST http://localhost:4000/api/v1/decision-makers/665f1.../enrich \
+  -H "Content-Type: application/json" \
+  -H "x-requested-with: XMLHttpRequest" \
+  -H "x-startup-id: 665a..." \
+  -b cookies.txt \
+  -d '{}'
+```
+
+---
+
+## 31. Contacts — Mark Contact Do Not Contact
+
+| | |
+|---|---|
+| **Method** | `POST` |
+| **URL** | `/api/v1/decision-makers/:id/do-not-contact` |
+| **Auth required** | **Yes** — `bc_session` cookie |
+| **Tenant header** | **Yes** — `x-startup-id: <startupId>` |
+| **Permission** | `prospect:mark_dnc` (`owner`, `admin`, `member`) |
+
+> Sets the individual contact's `outreachStatus` to `do_not_contact`, preventing further outreach to this specific person without affecting other contacts on the prospect.
+
+### Request Body (`application/json`)
+```json
+{}
+```
+
+### Response `200`
+```json
+{
+  "data": {
+    "id": "665f1...",
+    "prospectId": "665d1...",
+    "fullName": "Pat Lee",
+    "jobTitle": "CTO",
+    "businessEmail": "pat@example.com",
+    "source": "manual",
+    "outreachStatus": "do_not_contact",
+    "createdAt": "2026-10-11T08:00:00.000Z",
+    "updatedAt": "2026-10-11T08:10:00.000Z"
+  }
+}
+```
+
+### Errors
+| Status | Code | Reason |
+|---|---|---|
+| 400 | `MALFORMED_REQUEST` | Decision-maker ID is not a 24-character ObjectId |
+| 401 | `UNAUTHENTICATED` | Session missing or expired |
+| 404 | `NOT_FOUND` | Contact not found in this workspace |
+
+### curl
+```bash
+curl -X POST http://localhost:4000/api/v1/decision-makers/665f1.../do-not-contact \
+  -H "Content-Type: application/json" \
+  -H "x-requested-with: XMLHttpRequest" \
+  -H "x-startup-id: 665a..." \
+  -b cookies.txt \
+  -d '{}'
+```
+
+---
+
+## 32. Signals — List Prospect Signals
+
+| | |
+|---|---|
+| **Method** | `GET` |
+| **URL** | `/api/v1/prospects/:id/signals` |
+| **Auth required** | **Yes** — `bc_session` cookie |
+| **Tenant header** | **Yes** — `x-startup-id: <startupId>` |
+| **Permission** | `workspace:read` (`owner`, `admin`, `member`) |
+
+### Query Parameters
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `status` | string | *(all)* | Filter by status: `'active'`, `'dismissed'`, or `'stale'` |
+
+> **45-Day Staleness Rule:** Any stored `active` signal detected more than 45 days ago is dynamically evaluated and returned with status `"stale"`.
+
+### Response `200`
+```json
+{
+  "data": [
+    {
+      "id": "665f2...",
+      "prospectId": "665d1...",
+      "signalType": "technology",
+      "description": "Prospect uses confirmed technologies from ICP",
+      "evidence": [
+        {
+          "field": "technologies",
+          "value": "TypeScript"
+        }
+      ],
+      "confidence": 0.8,
+      "status": "active",
+      "detectedAt": "2026-10-11T08:00:00.000Z",
+      "createdAt": "2026-10-11T08:00:00.000Z",
+      "updatedAt": "2026-10-11T08:00:00.000Z"
+    }
+  ]
+}
+```
+
+### Errors
+| Status | Code | Reason |
+|---|---|---|
+| 400 | `MALFORMED_REQUEST` | Prospect ID is not a 24-character ObjectId |
+| 401 | `UNAUTHENTICATED` | Session missing or expired |
+| 404 | `NOT_FOUND` | Prospect not found in this workspace |
+
+### curl
+```bash
+curl "http://localhost:4000/api/v1/prospects/665d1.../signals?status=active" \
+  -H "x-startup-id: 665a..." \
+  -b cookies.txt
+```
+
+---
+
+## 33. Signals — Detect Prospect Signals
+
+| | |
+|---|---|
+| **Method** | `POST` |
+| **URL** | `/api/v1/prospects/:id/signals/detect` |
+| **Auth required** | **Yes** — `bc_session` cookie |
+| **Tenant header** | **Yes** — `x-startup-id: <startupId>` |
+| **Permission** | `prospect:score` (`owner`, `admin`, `member`) |
+
+> Deterministically analyzes data already recorded on the prospect (such as `firmographics.technologies`) against built-in heuristics. Deduplicates previously recorded identical evidence.
+
+### Request Body (`application/json`)
+```json
+{}
+```
+
+### Response `200`
+```json
+{
+  "data": {
+    "created": 1,
+    "signals": [
+      {
+        "id": "665f2...",
+        "prospectId": "665d1...",
+        "signalType": "technology",
+        "description": "Prospect uses confirmed technologies from ICP",
+        "evidence": [
+          {
+            "field": "technologies",
+            "value": "TypeScript"
+          }
+        ],
+        "confidence": 0.8,
+        "status": "active",
+        "detectedAt": "2026-10-11T08:00:00.000Z",
+        "createdAt": "2026-10-11T08:00:00.000Z",
+        "updatedAt": "2026-10-11T08:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+> If no new evidence is found, `created` is `0` and a descriptive `message` is returned.
+
+### Errors
+| Status | Code | Reason |
+|---|---|---|
+| 400 | `MALFORMED_REQUEST` | Prospect ID is not a 24-character ObjectId |
+| 401 | `UNAUTHENTICATED` | Session missing or expired |
+| 404 | `NOT_FOUND` | Prospect not found in this workspace |
+
+### curl
+```bash
+curl -X POST http://localhost:4000/api/v1/prospects/665d1.../signals/detect \
+  -H "Content-Type: application/json" \
+  -H "x-requested-with: XMLHttpRequest" \
+  -H "x-startup-id: 665a..." \
+  -b cookies.txt \
+  -d '{}'
+```
+
+---
+
+## 34. Signals — Interpret Prospect Signals (AI Interpretation)
+
+| | |
+|---|---|
+| **Method** | `POST` |
+| **URL** | `/api/v1/prospects/:id/signals/interpret` |
+| **Auth required** | **Yes** — `bc_session` cookie |
+| **Tenant header** | **Yes** — `x-startup-id: <startupId>` |
+| **Permission** | `prospect:score` (`owner`, `admin`, `member`) |
+
+### Request Body (`application/json`)
+```json
+{}
+```
+
+> **Capability Guard:** AI-based signal synthesis and narrative generation is guarded until LLM runtime services are configured.
+
+### Response `503` (Capability Disabled)
+```json
+{
+  "code": "CAPABILITY_DISABLED",
+  "message": "Signal interpretation is disabled until the AI service is implemented and configured",
+  "details": {
+    "capability": "signal_interpret"
+  }
+}
+```
+
+### curl
+```bash
+curl -X POST http://localhost:4000/api/v1/prospects/665d1.../signals/interpret \
+  -H "Content-Type: application/json" \
+  -H "x-requested-with: XMLHttpRequest" \
+  -H "x-startup-id: 665a..." \
+  -b cookies.txt \
+  -d '{}'
+```
+
+---
+
+## 35. Signals — Dismiss Signal
+
+| | |
+|---|---|
+| **Method** | `POST` |
+| **URL** | `/api/v1/signals/:id/dismiss` |
+| **Auth required** | **Yes** — `bc_session` cookie |
+| **Tenant header** | **Yes** — `x-startup-id: <startupId>` |
+| **Permission** | `prospect:score` (`owner`, `admin`, `member`) |
+
+> Transitions signal status to `dismissed`, preserving evidence for auditability while excluding it from active scoring evaluations.
+
+### Request Body (`application/json`)
+```json
+{}
+```
+
+### Response `200`
+```json
+{
+  "data": {
+    "id": "665f2...",
+    "prospectId": "665d1...",
+    "signalType": "technology",
+    "status": "dismissed",
+    "detectedAt": "2026-10-11T08:00:00.000Z",
+    "updatedAt": "2026-10-11T08:15:00.000Z"
+  }
+}
+```
+
+### Errors
+| Status | Code | Reason |
+|---|---|---|
+| 400 | `MALFORMED_REQUEST` | Signal ID is not a 24-character ObjectId |
+| 401 | `UNAUTHENTICATED` | Session missing or expired |
+| 404 | `NOT_FOUND` | Signal not found in this workspace |
+
+### curl
+```bash
+curl -X POST http://localhost:4000/api/v1/signals/665f2.../dismiss \
+  -H "Content-Type: application/json" \
+  -H "x-requested-with: XMLHttpRequest" \
+  -H "x-startup-id: 665a..." \
+  -b cookies.txt \
+  -d '{}'
 ```
 
 ---
@@ -1650,6 +2117,15 @@ curl "http://localhost:4000/api/v1/prospects/665d1.../scores?history=true&page=1
 | 24 | `POST` | `/api/v1/prospects/:id/clear-do-not-contact` | Cookie | `x-startup-id` | `prospect:clear_dnc` | Clear do-not-contact (admin/owner) |
 | 25 | `POST` | `/api/v1/prospects/score` | Cookie | `x-startup-id` | `prospect:score` | Batch deterministic prospect scoring |
 | 26 | `GET` | `/api/v1/prospects/:id/scores` | Cookie | `x-startup-id` | `workspace:read` | Get latest score or history audit trail |
+| 27 | `GET` | `/api/v1/prospects/:id/decision-makers` | Cookie | `x-startup-id` | `workspace:read` | List decision makers for prospect |
+| 28 | `POST` | `/api/v1/prospects/:id/decision-makers` | Cookie | `x-startup-id` | `contact:enrich` | Manually add contact to prospect |
+| 29 | `POST` | `/api/v1/prospects/:id/decision-makers/search` | Cookie | `x-startup-id` | `contact:enrich` | Apollo people search (guarded 503) |
+| 30 | `POST` | `/api/v1/decision-makers/:id/enrich` | Cookie | `x-startup-id` | `contact:enrich` | Apollo contact enrich (guarded 503) |
+| 31 | `POST` | `/api/v1/decision-makers/:id/do-not-contact` | Cookie | `x-startup-id` | `prospect:mark_dnc` | Mark individual contact as DNC |
+| 32 | `GET` | `/api/v1/prospects/:id/signals` | Cookie | `x-startup-id` | `workspace:read` | List prospect signals (with 45d stale rule) |
+| 33 | `POST` | `/api/v1/prospects/:id/signals/detect` | Cookie | `x-startup-id` | `prospect:score` | Deterministic signal candidate detection |
+| 34 | `POST` | `/api/v1/prospects/:id/signals/interpret` | Cookie | `x-startup-id` | `prospect:score` | AI signal interpretation (guarded 503) |
+| 35 | `POST` | `/api/v1/signals/:id/dismiss` | Cookie | `x-startup-id` | `prospect:score` | Dismiss active signal |
 
 ---
 
@@ -1751,7 +2227,51 @@ curl http://localhost:4000/api/v1/prospects/<PROSPECT_ID> \
   -H "x-startup-id: <STARTUP_ID>" \
   -b cookies.txt
 
-# 16. Mark prospect as Do Not Contact (DNC)
+# 16. Add a decision-maker contact manually
+curl -X POST http://localhost:4000/api/v1/prospects/<PROSPECT_ID>/decision-makers \
+  -H "Content-Type: application/json" \
+  -H "x-requested-with: XMLHttpRequest" \
+  -H "x-startup-id: <STARTUP_ID>" \
+  -b cookies.txt \
+  -d '{"fullName":"Pat Lee","jobTitle":"CTO","businessEmail":"pat@example.com","linkedinUrl":"https://www.linkedin.com/in/pat"}'
+# (Take "id" from response, e.g. CONTACT_ID=665f...)
+
+# 17. List contacts for prospect
+curl http://localhost:4000/api/v1/prospects/<PROSPECT_ID>/decision-makers \
+  -H "x-startup-id: <STARTUP_ID>" \
+  -b cookies.txt
+
+# 18. Detect deterministic buying signals on prospect
+curl -X POST http://localhost:4000/api/v1/prospects/<PROSPECT_ID>/signals/detect \
+  -H "Content-Type: application/json" \
+  -H "x-requested-with: XMLHttpRequest" \
+  -H "x-startup-id: <STARTUP_ID>" \
+  -b cookies.txt \
+  -d '{}'
+# (Take "id" from signals array in response, e.g. SIGNAL_ID=665f...)
+
+# 19. List active signals for prospect
+curl "http://localhost:4000/api/v1/prospects/<PROSPECT_ID>/signals?status=active" \
+  -H "x-startup-id: <STARTUP_ID>" \
+  -b cookies.txt
+
+# 20. Dismiss a signal
+curl -X POST http://localhost:4000/api/v1/signals/<SIGNAL_ID>/dismiss \
+  -H "Content-Type: application/json" \
+  -H "x-requested-with: XMLHttpRequest" \
+  -H "x-startup-id: <STARTUP_ID>" \
+  -b cookies.txt \
+  -d '{}'
+
+# 21. Mark an individual contact as Do Not Contact
+curl -X POST http://localhost:4000/api/v1/decision-makers/<CONTACT_ID>/do-not-contact \
+  -H "Content-Type: application/json" \
+  -H "x-requested-with: XMLHttpRequest" \
+  -H "x-startup-id: <STARTUP_ID>" \
+  -b cookies.txt \
+  -d '{}'
+
+# 22. Mark whole prospect as Do Not Contact (DNC)
 curl -X POST http://localhost:4000/api/v1/prospects/<PROSPECT_ID>/do-not-contact \
   -H "Content-Type: application/json" \
   -H "x-requested-with: XMLHttpRequest" \
@@ -1759,7 +2279,7 @@ curl -X POST http://localhost:4000/api/v1/prospects/<PROSPECT_ID>/do-not-contact
   -b cookies.txt \
   -d '{"reason":"Requested opt out"}'
 
-# 17. Clear Do Not Contact (admin / owner)
+# 23. Clear Do Not Contact on prospect (admin / owner)
 curl -X POST http://localhost:4000/api/v1/prospects/<PROSPECT_ID>/clear-do-not-contact \
   -H "Content-Type: application/json" \
   -H "x-requested-with: XMLHttpRequest" \
@@ -1767,7 +2287,7 @@ curl -X POST http://localhost:4000/api/v1/prospects/<PROSPECT_ID>/clear-do-not-c
   -b cookies.txt \
   -d '{"reason":"Leadership re-engaged for Q4 demo"}'
 
-# 18. Disqualify prospect
+# 24. Disqualify prospect
 curl -X POST http://localhost:4000/api/v1/prospects/<PROSPECT_ID>/disqualify \
   -H "Content-Type: application/json" \
   -H "x-requested-with: XMLHttpRequest" \
@@ -1775,13 +2295,13 @@ curl -X POST http://localhost:4000/api/v1/prospects/<PROSPECT_ID>/disqualify \
   -b cookies.txt \
   -d '{"reason":"Not in target market"}'
 
-# 19. Archive ICP
+# 25. Archive ICP
 curl -X POST http://localhost:4000/api/v1/icps/<ICP_ID>/archive \
   -H "x-requested-with: XMLHttpRequest" \
   -H "x-startup-id: <STARTUP_ID>" \
   -b cookies.txt
 
-# 20. Logout
+# 26. Logout
 curl -X POST http://localhost:4000/api/v1/auth/logout \
   -H "x-requested-with: XMLHttpRequest" \
   -b cookies.txt -c cookies.txt
