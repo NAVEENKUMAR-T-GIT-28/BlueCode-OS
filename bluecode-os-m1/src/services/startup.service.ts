@@ -1,33 +1,51 @@
 import mongoose, { Types } from 'mongoose';
 import { env } from '../config/env.js';
 import { ApiError } from '../shared/api-error.js';
-import { startupRepository } from '../repositories/startup.repository.js';
+import { startupRepository, type MembershipRow } from '../repositories/startup.repository.js';
 import { permissionsForRole } from '../config/permissions.js';
 
 export const startupService = {
   async create(userId: string, name: string) {
-    const session = await mongoose.startSession();
+    // Try with a transaction (requires replica set). Fall back to a plain save
+    // when running a standalone MongoDB in development.
     try {
-      let result: Awaited<ReturnType<typeof startupRepository.createWithOwner>> | undefined;
-      await session.withTransaction(async () => {
-        result = await startupRepository.createWithOwner({
-          ownerUserId: new Types.ObjectId(userId),
-          name: name.trim(),
-          trialSpendCapPaise: env.TRIAL_SPEND_CAP_PAISE,
-        }, session);
+      const session = await mongoose.startSession();
+      try {
+        let result: Awaited<ReturnType<typeof startupRepository.createWithOwner>> | undefined;
+        await session.withTransaction(async () => {
+          result = await startupRepository.createWithOwner({
+            ownerUserId: new Types.ObjectId(userId),
+            name: name.trim(),
+            trialSpendCapPaise: env.TRIAL_SPEND_CAP_PAISE,
+          }, session);
+        });
+        if (!result) throw new Error('Workspace transaction returned no result');
+        return {
+          id: result.id, name: result.name, plan: result.plan, status: result.status,
+          trialEndsAt: result.trialEndsAt, createdAt: result.createdAt,
+        };
+      } finally {
+        await session.endSession();
+      }
+    } catch (err: unknown) {
+      // MongoServerError code 20 = Transaction numbers are only allowed on a replica set member
+      const code = (err as { code?: number })?.code;
+      if (code !== 20) throw err;
+      // Standalone MongoDB fallback (dev only)
+      const result = await startupRepository.createWithOwner({
+        ownerUserId: new Types.ObjectId(userId),
+        name: name.trim(),
+        trialSpendCapPaise: env.TRIAL_SPEND_CAP_PAISE,
       });
-      if (!result) throw new Error('Workspace transaction returned no result');
       return {
         id: result.id, name: result.name, plan: result.plan, status: result.status,
         trialEndsAt: result.trialEndsAt, createdAt: result.createdAt,
       };
-    } finally {
-      await session.endSession();
     }
   },
   async list(userId: string) {
     const memberships = await startupRepository.listForUser(new Types.ObjectId(userId));
-    const rows = await Promise.all(memberships.map(async membership => {
+    const rows = await Promise.all(memberships.map(async (membership: MembershipRow) => {
       const startup = await startupRepository.findAccessibleStartup(membership.startupId);
       if (!startup) return null;
       return {

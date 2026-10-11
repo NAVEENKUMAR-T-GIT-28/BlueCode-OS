@@ -1,4 +1,4 @@
-import mongoose, { Schema, model } from 'mongoose';
+import mongoose, { Schema, model, type Model, type InferSchemaType } from 'mongoose';
 
 const startupMemberSchema = new Schema({
   startupId: { type: Schema.Types.ObjectId, ref: 'Startup', required: true, index: true },
@@ -9,4 +9,7 @@ const startupMemberSchema = new Schema({
 
 startupMemberSchema.index({ startupId: 1, userId: 1 }, { unique: true });
 startupMemberSchema.index({ userId: 1, status: 1 });
-export const StartupMember = mongoose.models.StartupMember ?? model('StartupMember', startupMemberSchema, 'startupMembers');
+
+export type StartupMemberDocument = InferSchemaType<typeof startupMemberSchema>;
+export const StartupMember: Model<StartupMemberDocument> =
+  (mongoose.models['StartupMember'] as Model<StartupMemberDocument>) ?? model('StartupMember', startupMemberSchema, 'startupMembers');
