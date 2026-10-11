@@ -4,6 +4,7 @@ import { prospectRepository } from '../repositories/prospect.repository.js';
 import { salesActivityRepository } from '../repositories/sales-activity.repository.js';
 import { canTransitionProspect } from './prospect-state.js';
 import { clock } from '../utils/clock.js';
+import { discoveryService } from './discovery.service.js';
 import type { ProspectListQuery, ProspectStatus } from '../types/prospect.js';
 
 const SIGNAL_STALE_DAYS = 45;
@@ -47,9 +48,15 @@ function signalDto(signal: any, now = clock.now().getTime()) {
 }
 
 export const prospectService = {
-  async search() {
-    // search_orgs is UNVERIFIED/disabled. Do not call Apollo until the capability is approved and enabled.
-    throw new ApiError(503, 'CAPABILITY_DISABLED', 'Organization search is disabled until the Apollo capability is verified and enabled', { capability: 'search_orgs' });
+  async search(input: {
+    startupId: string;
+    plan: import('../types/startup.js').StartupPlan;
+    icpId: string;
+    page: number;
+    perPage: number;
+    requestId?: string;
+  }) {
+    return discoveryService.search(input);
   },
 
   async list(startupId: string, query: ProspectListQuery) {

@@ -284,6 +284,24 @@ export const usageService = {
     return { allowed: true as const, used, limit: limit ?? null };
   },
 
+  /** Record a mock-only provider call without reserving or consuming spend. */
+  async recordMockUsage(
+    context: UsageContext,
+    operation: string,
+    status: 'success' | 'failed' = 'success',
+    errorCode?: string,
+  ): Promise<void> {
+    const startupId = objectId(context.startupId, 'startup ID');
+    const provider = providerFor(operation);
+    await usageRepository.appendRecord({
+      startupId, provider, operation, status,
+      costAmount: 0, costType: 'estimated', occurredAt: clock.now(),
+      ...(context.requestId !== undefined ? { requestId: context.requestId } : {}),
+      ...(context.entityRef !== undefined ? { entityRef: context.entityRef } : {}),
+      ...(errorCode !== undefined ? { errorCode: /^[A-Z0-9_:-]{1,100}$/.test(errorCode) ? errorCode : 'MOCK_FAILURE' } : {}),
+    });
+  },
+
   async recoverDanglingReservations() {
     const affected = await usageRepository.recoverReservedCounters();
     console.info(JSON.stringify({

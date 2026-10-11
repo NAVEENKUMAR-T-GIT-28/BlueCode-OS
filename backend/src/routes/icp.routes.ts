@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireTenant } from '../middleware/require-tenant.js';
 import { requirePermission } from '../middleware/require-permission.js';
-import { createIcp, listIcps, getIcp, updateIcp, archiveIcp } from '../controllers/icp.controller.js';
+import { createIcp, listIcps, getIcp, updateIcp, archiveIcp, proposeIcp } from '../controllers/icp.controller.js';
 import { createIcpSchema, updateIcpSchema, listIcpsQuerySchema } from '../validators/icp.validator.js';
+import { icpProposalInputSchema } from '../validators/icp-proposal.validator.js';
 
 const router = Router();
 
@@ -23,6 +24,7 @@ function validate(schema: z.ZodTypeAny, source: 'body' | 'query' | 'params' = 'b
 
 const idSchema = z.object({ id: z.string().regex(/^[a-f\d]{24}$/i) }).strict();
 router.use(authenticate, requireTenant);
+router.post('/propose', requirePermission('icp:write'), validate(icpProposalInputSchema), proposeIcp);
 router.post('/', requirePermission('icp:write'), validate(createIcpSchema), createIcp);
 router.get('/', requirePermission('workspace:read'), validate(listIcpsQuerySchema, 'query'), listIcps);
 router.get('/:id', requirePermission('workspace:read'), validate(idSchema, 'params'), getIcp);

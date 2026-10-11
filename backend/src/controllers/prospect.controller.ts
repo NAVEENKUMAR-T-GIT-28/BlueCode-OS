@@ -2,9 +2,17 @@ import type { RequestHandler } from 'express';
 import { prospectService } from '../services/prospect.service.js';
 import type { ProspectListQuery, ProspectStatus, ScoreCategory } from '../types/prospect.js';
 
-export const searchProspects: RequestHandler = async (_req, _res, next) => {
-  try { await prospectService.search(); }
-  catch (error) { next(error); }
+export const searchProspects: RequestHandler = async (req, res, next) => {
+  try {
+    const data = await prospectService.search({
+      startupId: req.tenant!.startupId.toString(),
+      plan: req.tenant!.plan,
+      icpId: req.body.icpId,
+      page: req.body.page,
+      perPage: req.body.perPage,
+    });
+    res.json({ data });
+  } catch (error) { next(error); }
 };
 
 export const listProspects: RequestHandler = async (req, res, next) => {

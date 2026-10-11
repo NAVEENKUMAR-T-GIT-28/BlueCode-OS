@@ -1,5 +1,16 @@
 import type { RequestHandler } from 'express';
 import { icpService } from '../services/icp.service.js';
+import { aiService } from '../providers/ai/ai.service.js';
+
+export const proposeIcp: RequestHandler = async (req, res, next) => {
+  try {
+    const proposal = await aiService.runIcpExtract({
+      startupId: req.tenant!.startupId.toString(),
+      requestId: req.requestId,
+    }, req.body);
+    res.json({ data: proposal });
+  } catch (error) { next(error); }
+};
 
 export const createIcp: RequestHandler = async (req, res, next) => {
   try {
