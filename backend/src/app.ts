@@ -12,6 +12,7 @@ import icpRoutes from './routes/icp.routes.js';
 import prospectRoutes from './routes/prospect.routes.js';
 import scoringRoutes from './routes/scoring.routes.js';
 import contactSignalRoutes from './routes/contact-signal.routes.js';
+import usageRoutes from './routes/usage.routes.js';
 
 export const createApp = () => {
   const app = express();
@@ -27,9 +28,9 @@ export const createApp = () => {
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/startups', startupRoutes);
   app.use('/api/v1/icps', icpRoutes);
-  // Exact scoring and nested contact/signal paths are mounted before the generic prospect router.
   app.use('/api/v1', scoringRoutes);
   app.use('/api/v1', contactSignalRoutes);
+  app.use('/api/v1/usage', usageRoutes);
   app.use('/api/v1/prospects', prospectRoutes);
   app.use(notFoundHandler);
   app.use(errorHandler);

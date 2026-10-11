@@ -1,10 +1,13 @@
 import mongoose from 'mongoose';
 import { env } from './config/env.js';
 import { createApp } from './app.js';
+import { usageService } from './services/usage.service.js';
 
 async function main() {
   mongoose.set('autoIndex', false);
   await mongoose.connect(env.MONGODB_URI);
+  await usageService.recoverDanglingReservations();
+
   const app = createApp();
   const server = app.listen(env.PORT, () => {
     console.info(JSON.stringify({ level: 'info', event: 'server_started', port: env.PORT, nodeEnv: env.NODE_ENV }));

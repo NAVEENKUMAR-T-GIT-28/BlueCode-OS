@@ -11,7 +11,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "reconcile:usage": "tsx src/scripts/reconcile-usage.ts"
   },
   "dependencies": {
     "argon2": "^0.41.1",
