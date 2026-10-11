@@ -57,7 +57,7 @@ Out of scope here (see §18): Apollo sequences, automatic activity sync, reply r
 | D2 | **Outbound = `mailto:` handoff only.** No server-side sending | Accepted in v2 (confirm) |
 | D3 | No job queue and **no cron jobs**. Time-based rules evaluated lazily | Accepted |
 | D4 | Money is integer paise (INR) everywhere | Accepted |
-| D5 | Trial cap from config `TRIAL_SPEND_CAP_PAISE`, default 25000 (₹250) | Accepted, revisit after pilot |
+| D5 | Trial cap from config `TRIAL_SPEND_CAP_PAISE`; amount pending owner freeze | Pending owner freeze |
 | D6 | Score is deterministic; LLM writes explanation only | Accepted |
 | D7 | JWT in httpOnly cookie; membership and user status checked every request | Accepted |
 | D8 | MongoDB runs as a **replica set** (single-node is fine) so transactions work | Accepted |

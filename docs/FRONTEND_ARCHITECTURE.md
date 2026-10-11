@@ -124,7 +124,7 @@ Navigation (sidebar): Dashboard · ICPs · Prospects · Outreach · Next actions
 - Switching workspace clears the entire query cache.
 
 ### 5.3 Permissions and capabilities (API additions required)
-The client must not duplicate the permission matrix. It needs two things from the API, added to `GET /startups/current` (additive change, tracked as API-1 in §16):
+The client must not duplicate the permission matrix. It reads `me.permissions` and `capabilities` from `GET /startups/current` as defined in `API_CONTRACT.md` and decision D26 (API-1).
 
 ```ts
 Startup.me:           { role, permissions: string[] }       // e.g. ['icp:write','message:approve',…]
@@ -195,7 +195,7 @@ Keys: `['startup']`, `['icps', filters]`, `['icp', id]`, `['prospects', filters]
 ### 7.1 `AppLayout`
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│ Top bar: workspace switcher │ Trial: 11 days left │ Spend ₹36/₹250 (approx.) │ user menu │
+│ Top bar: workspace switcher │ Trial: 11 days left │ Spend ₹36 / configured cap │ user menu │
 ├───────────┬────────────────────────────────────────────────────────┤
 │ Sidebar   │  [Persistent banners: trial expired / budget reached]   │
 │ Dashboard │                                                          │
@@ -240,7 +240,7 @@ Welcome, ABC Technologies                       Trial: 11 days left
 Today:  25 Prospects found | 12 Hot & High | 4 Drafts to approve | 6 Ready to open | 3 Follow-ups to consider
 Top recommendations (up to 3)  →  [View all]
 Pipeline (what we recorded): Discovered 25 → Selected 12 → With email 9 → Approved 6 → Opened in email 5 → Marked sent by you 3 → Replies logged 1
-Usage: ₹36 of ₹250 (approx.)
+Usage: ₹36 of configured cap
 ```
 - Empty state for a new workspace: a 3-step checklist (Create ICP → Discover prospects → Draft outreach) with links.
 - The funnel labels use the honest wording (§11). There are no open or reply-rate charts.
@@ -287,9 +287,9 @@ If `searchPeople` or `enrich` is off, the Contacts tab shows the `CapabilityNoti
 - **List:** name, ICP, status chip, message counts, created date. "New campaign" (name + ICP; channel fixed to Email).
 - **Campaign detail:**
   - Header: status chip and the allowed actions for the role (Submit for approval, Approve, Pause, Resume, Complete, Cancel; buttons shown from the current status).
-  - Helper text on `active`: "Active means at least one email was opened in your email app. BlueCode doesn't send emails or schedule follow-ups."
+  - Helper text on `active`: "Active means at least one message was handed off to your email app. BlueCode doesn't send emails or schedule follow-ups."
   - Message table: contact, step, status chip, approval chip, revision.
-  - "Add draft": pick a contact (only those with an email and not DNC; others listed disabled with the reason) and a step (1–3).
+  - "Add draft": pick a contact (only those with an email and not DNC; others listed disabled with the reason) and a step (1–5).
 
 ### 8.8 Message editor (`/outreach/messages/:id`), the most important screen
 ```
@@ -462,7 +462,7 @@ With MSW fixtures built from `API_CONTRACT.md`, F1 to F2 can start before the ba
 
 ## 17. Open items
 
-1. **API-1 (additive):** add `Startup.me { role, permissions[] }` and `Startup.capabilities { searchOrgs, searchPeople, enrich }` to `GET /startups/current`. (Patched into `API_CONTRACT.md`.)
+1. **API-1 / D26:** `GET /startups/current` already specifies `me.permissions` and `capabilities` in `API_CONTRACT.md`. This is a contract requirement to implement and test, not a pending API-doc addition.
 2. **Webmail fallback:** decide whether to add "Open in Gmail/Outlook" compose links later. Not in the MVP, because `mailto:` is the frozen decision.
 3. **Brand and design tokens:** colors, typography, logo. The component structure does not depend on them.
 4. **Shared package:** decide whether `shared/` lives in the same repo (recommended) or is published separately.

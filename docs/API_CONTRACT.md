@@ -518,7 +518,7 @@ Funnel stages count only events the system recorded; `userReportedSent` is the f
 - Every change updates this file, the Zod validators, and the contract tests in one PR, with a `DECISIONS.md` entry if it changes behaviour.
 
 ## 21. Open items
-1. Freeze the trial spend cap (`TRIAL_SPEND_CAP_PAISE`); the UI, tests, and contract examples (`25000` paise) must follow the frozen value.
+1. Freeze the trial spend cap (`TRIAL_SPEND_CAP_PAISE`) before implementation. Numeric values in response examples are illustrative only, not an approved default; config, UI, and tests must use the owner-frozen value.
 2. Confirm status code `402` for plan/budget limits (changing to `429` is a one-line change in §1.5 and the error registry).
 3. Confirm the invite flow (existing users only) is acceptable for the pilot.
 4. After approval: generate `openapi.yaml` from this file and derive Zod validators from it.

@@ -12,7 +12,7 @@ Nothing in this file is verified yet. Endpoint names, credit costs, and limits m
 
 | # | Capability (flag) | Used by | MVP? | Endpoint (fill from docs) | Required permission / key type | Plan restriction found | Credits per call (measured) | Rate limit (measured) | Evidence (link/date) | Status | Fallback if unavailable |
 |--:|---|---|:-:|---|---|---|---|---|---|---|---|
-| 1 | Organization search (`search_orgs`) | Discovery | Yes | | | | | | | UNVERIFIED | Manual company import (CSV/paste) |
+| 1 | Organization search (`search_orgs`) | Discovery | Yes | | | | | | | UNVERIFIED | Discovery unavailable; manual company import is not in MVP |
 | 2 | People search (`search_people`) | Find decision makers | Yes | | | | | | | UNVERIFIED | `addContactManually` |
 | 3 | Person enrichment (`enrich`) | Business email | Yes | | | | | | | UNVERIFIED | `addContactManually` (`emailVerified=false`) |
 | 4 | Credit/usage visibility (`usage_read`) | Cost reconciliation | Nice | | | | | | | UNVERIFIED | Use our estimates (`costType:'estimated'`) |

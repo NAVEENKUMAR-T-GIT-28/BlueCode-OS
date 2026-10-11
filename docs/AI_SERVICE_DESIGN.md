@@ -255,7 +255,7 @@ Rules:
 - Subject non-empty.
 - If `facts` is empty, the body must contain no phrase matching "I noticed", "I saw", "congratulations", "recently" (treated as a claimed observation).
 
-**Result:** `outreachMessages` row: `approvalStatus='pending'`, `status='draft'`, `step`, `revision`. The backend appends the fixed opt-out footer from config `DRAFT_OPT_OUT_LINE` (server-side constant, outside the model) so the model cannot omit or alter it. Whether and how to word this footer needs your own compliance review for the countries you target (for example UK/EU B2B email rules and CAN-SPAM). This document does not give legal advice.
+**Result:** `outreachMessages` row: `approvalStatus='pending'`, `status='draft'`, `step`, `revision`. D21 is still Proposed, so draft generation must not assume or append `DRAFT_OPT_OUT_LINE` until the owner accepts that decision after compliance review. If D21 is accepted, the footer must be a fixed server-side constant outside model control. This document does not give legal advice.
 
 ### 6.5 `classify_reply`
 
@@ -404,14 +404,14 @@ Founders review and approve every draft. During the pilot, log (without content)
 | `LLM_MODEL_SMALL`, `LLM_MODEL_MID` | Model names per tier |
 | `LLM_PRICE_IN_*`, `LLM_PRICE_OUT_*`, `USD_INR`, `COST_SAFETY_FACTOR` | Cost estimation |
 | `LLM_TIMEOUT_MS` | Default 30000 |
-| `DRAFT_OPT_OUT_LINE` | Fixed footer appended to drafts (needs your compliance review) |
+| `DRAFT_OPT_OUT_LINE` | Reserved configuration only; no footer is appended while D21 remains Proposed |
 | `SIGNAL_STALE_DAYS`, `FOLLOWUP_DAYS` | Already defined in Backend |
 
 ---
 
 ## 12. Open items
 1. Pick the LLM provider and models for each tier, and record real prices; replace the placeholder estimates in §7.3.
-2. Decide the exact `DRAFT_OPT_OUT_LINE` wording after a compliance check for the target countries.
+2. Decide whether to accept D21; only if accepted, finalize `DRAFT_OPT_OUT_LINE` wording after compliance review for the target countries.
 3. Define the supported country list used by `icp_extract` validation and by the Apollo filter mapper.
 4. After the Apollo capability matrix is filled in: set `APOLLO_PAISE_PER_CREDIT` and size the trial cap against real numbers.
 5. Collect 15–20 golden fixtures per task from your first pilot conversations.

@@ -279,7 +279,7 @@ For every `TenantRepository` method: a test that startup A's filter cannot be ov
 | AI-12 | Draft with a URL other than `calendarLink`, an email address, markdown/HTML, or a placeholder → rejected |
 | AI-13 | Draft with no facts containing "I noticed"/"congratulations"/"recently" → rejected |
 | AI-14 | Word limits enforced per step |
-| AI-15 | Opt-out footer appended by the server, not model-controlled |
+| AI-15 | While D21 is Proposed, drafts do not assume or append an opt-out footer; if D21 is accepted, test that the fixed server-side footer is appended and not model-controlled |
 | AI-16 | Signal referencing an evidence field not in stored data → rejected; `value` always copied from stored data |
 | AI-17 | Signal confidence above rubric caps → rejected |
 | AI-18 | `explain_score` mentioning a different score → rejected; score and category unchanged afterwards |
@@ -345,7 +345,7 @@ Engineering items only; confirm requirements with a lawyer for each market (for 
 - [ ] LLM inputs minimized (AI §4); provider data controls set to no training and shortest retention available
 - [ ] Data processing terms accepted with the hosting, LLM, and Apollo providers; data location noted
 - [ ] **Do-not-contact** honored everywhere and never silently cleared
-- [ ] Opt-out footer present on drafts (AI §6.4); sender identity included
+- [ ] Resolve D21 after compliance review; if accepted, verify the fixed opt-out footer and sender identity are present on drafts
 - [ ] Privacy notice tells founders that prospect and reply text is processed by an LLM provider and that contact data comes from Apollo
 - [ ] Data subject requests: a documented manual procedure to find, export, and delete a contact across `decisionMakers`, `outreachMessages`, `salesActivities`, `nextBestActions`, `buyingSignals`
 - [ ] Workspace deletion procedure: remove all documents with that `startupId` in all 11 tenant collections plus memberships; backups age out per retention policy
