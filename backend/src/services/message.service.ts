@@ -326,4 +326,60 @@ export const messageService = {
     if (!updated) throw new ApiError(409, 'INVALID_STATE', 'Message status changed; refresh and retry');
     return messageDto(updated);
   },
+  async isContactSuppressed(startupIdValue: string, prospectIdValue: string, decisionMakerIdValue: string) {
+    const startupId = objectId(startupIdValue, 'workspace ID');
+    const prospectId = objectId(prospectIdValue, 'prospect ID');
+    const decisionMakerId = objectId(decisionMakerIdValue, 'decision-maker ID');
+    const [prospect, contact] = await Promise.all([
+      outreachRepository.findProspect(startupId, prospectId),
+      outreachRepository.findContact(startupId, decisionMakerId),
+    ]);
+    if (!prospect || !contact || id(contact.prospectId) !== id(prospect._id)) {
+      throw new ApiError(404, 'NOT_FOUND', 'Contact not found');
+    }
+    return prospect.status === 'do_not_contact' || contact.outreachStatus === 'do_not_contact';
+  },
+
+  async getReplyContext(startupIdValue: string, messageIdValue: string) {
+    const startupId = objectId(startupIdValue, 'workspace ID');
+    const bundle = await loadMessageBundle(startupId, messageIdValue);
+    // loadMessageBundle verifies tenant ownership and contact-to-prospect consistency.
+    return { ...messageDto(bundle.message), prospectId: id(bundle.prospect._id), decisionMakerId: id(bundle.contact._id) };
+  },
+
+  async cancelUnsentForProspect(startupIdValue: string, prospectIdValue: string) {
+    const startupId = objectId(startupIdValue, 'workspace ID');
+    const prospectId = objectId(prospectIdValue, 'prospect ID');
+    return outreachRepository.cancelUnsentMessagesForProspect(startupId, prospectId);
+  },
+
+  async listFollowupCandidates(startupIdValue: string, cutoff: Date) {
+    const startupId = objectId(startupIdValue, 'workspace ID');
+    const rows = await outreachRepository.listFollowupCandidates(startupId, cutoff, 100);
+    const items: Array<{ messageId: string; prospectId: string; decisionMakerId: string; updatedAt: Date }> = [];
+    for (const row of rows) {
+      const prospect = await outreachRepository.findProspect(startupId, new Types.ObjectId(id(row.prospectId)));
+      const contact = await outreachRepository.findContact(startupId, new Types.ObjectId(id(row.decisionMakerId)));
+      if (!prospect || !contact || prospect.status === 'do_not_contact' || contact.outreachStatus === 'do_not_contact') continue;
+      items.push({
+        messageId: id(row._id),
+        prospectId: id(row.prospectId),
+        decisionMakerId: id(row.decisionMakerId),
+        updatedAt: new Date(row.updatedAt),
+      });
+    }
+    return items;
+  },
+
+  async latestMessageRoute(startupIdValue: string, prospectIdValue: string, decisionMakerIdValue?: string) {
+    const startupId = objectId(startupIdValue, 'workspace ID');
+    const prospectId = objectId(prospectIdValue, 'prospect ID');
+    const decisionMakerId = decisionMakerIdValue ? objectId(decisionMakerIdValue, 'decision-maker ID') : undefined;
+    const result = await outreachRepository.listMessages(startupId, {
+      prospectId,
+      ...(decisionMakerId ? { decisionMakerId } : {}),
+      sort: '-createdAt', page: 1, limit: 1,
+    });
+    return result.items[0] ? `/messages/${id(result.items[0]._id)}` : '/messages';
+  },
 };

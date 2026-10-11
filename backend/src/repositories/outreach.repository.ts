@@ -220,4 +220,20 @@ export const outreachRepository = {
       metadata: { messageId: String(input.messageId), source },
     });
   },
+  listFollowupCandidates(startupId: Types.ObjectId, cutoff: Date, limit = 100) {
+    return OutreachMessage.find({
+      startupId,
+      status: { $in: ['handed_off', 'user_reported_sent'] },
+      updatedAt: { $lte: cutoff },
+    }).sort({ updatedAt: 1, _id: 1 }).limit(Math.min(Math.max(limit, 1), 100)).lean();
+  },
+
+  async cancelUnsentMessagesForProspect(startupId: Types.ObjectId, prospectId: Types.ObjectId) {
+    const result = await OutreachMessage.updateMany(
+      { startupId, prospectId, status: { $in: ['draft', 'ready'] } },
+      { $set: { status: 'cancelled' } },
+      { runValidators: true },
+    );
+    return result.modifiedCount;
+  },
 };
