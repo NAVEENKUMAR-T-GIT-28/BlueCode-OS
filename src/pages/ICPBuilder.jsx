@@ -344,7 +344,7 @@ export default function ICPBuilder({
           <div className="flex min-w-0 items-center gap-3">
             <img
               src={bluecodeLogo}
-              alt="BlueCode OS logo"
+              alt="AI Founder OS logo"
               className="h-11 w-11 shrink-0 rounded-xl border border-slate-200 bg-white object-contain p-1.5"
             />
 

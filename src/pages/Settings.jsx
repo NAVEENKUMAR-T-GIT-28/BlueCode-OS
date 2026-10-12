@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 
 const COMPANY = {
-  name: "BlueCode OS",
+  name: "AI Founder OS",
   website: "https://bluecode-os.com",
   industry: "Software / SaaS",
 };
@@ -482,7 +482,7 @@ export default function Settings() {
                 </Panel>
 
                 <Notice>
-                  BlueCode OS pays for the AI API. The backend must record
+                  AI Founder OS pays for the AI API. The backend must record
                   actual usage, check the fixed ₹1,000 monthly limit before
                   billable requests, and reject further requests when the
                   budget is exhausted.

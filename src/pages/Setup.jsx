@@ -25,7 +25,7 @@ function Setup() {
             </div>
 
             <div>
-              <p className="text-sm font-bold">BlueCode OS</p>
+              <p className="text-sm font-bold">AI Founder OS</p>
               <p className="text-xs text-slate-500">AI Sales Copilot</p>
             </div>
           </div>

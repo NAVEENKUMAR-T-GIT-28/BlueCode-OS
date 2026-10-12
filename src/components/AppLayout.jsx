@@ -43,13 +43,13 @@ function AppLayout() {
         <div className="flex h-20 items-center gap-3 border-b border-slate-100 px-5">
           <img
             src={bluecodeLogo}
-            alt="BlueCode OS"
+            alt="AI Founder OS"
             className="h-10 w-10 rounded-xl object-contain"
           />
 
           <div>
             <h1 className="text-sm font-bold tracking-tight text-slate-950">
-              BlueCode OS
+              AI Founder OS
             </h1>
             <p className="text-[11px] font-medium text-slate-400">
               AI Sales Copilot
@@ -141,12 +141,12 @@ function AppLayout() {
         <div className="flex items-center gap-2.5">
           <img
             src={bluecodeLogo}
-            alt="BlueCode OS"
+            alt="AI Founder OS"
             className="h-9 w-9 rounded-lg object-contain"
           />
 
           <div>
-            <p className="text-sm font-bold text-slate-950">BlueCode OS</p>
+            <p className="text-sm font-bold text-slate-950">AI Founder OS</p>
             <p className="text-[9px] font-semibold text-slate-400">
               AI Sales Copilot
             </p>
@@ -178,13 +178,13 @@ function AppLayout() {
               <div className="flex items-center gap-3">
                 <img
                   src={bluecodeLogo}
-                  alt="BlueCode OS"
+                  alt="AI Founder OS"
                   className="h-10 w-10 rounded-xl object-contain"
                 />
 
                 <div>
                   <p className="text-sm font-bold text-slate-950">
-                    BlueCode OS
+                    AI Founder OS
                   </p>
                   <p className="text-[10px] text-slate-400">
                     AI Sales Copilot
