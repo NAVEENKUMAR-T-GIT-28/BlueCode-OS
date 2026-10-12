@@ -1,5 +1,9 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { ApiEnvelope, ApiRequestError, api, formatDate, formatDateTime, formatMoneyPaise, getId, isRecord, queryString, readError } from "./api";
+import { ApiRequestError, api, formatDate, formatDateTime, formatMoneyPaise, getId, isRecord, queryString, readError } from "./api";
+import { useMutation, useRemote } from "./app/hooks";
+import { WorkspacePicker } from "./features/workspaces/WorkspacePicker";
+import { AppShell } from "./layouts/AppShell";
+import { navItems } from "./app/navigation";
 import { Icon, Logo, Button, Badge, PageHeader, Field, TextArea, LoadingState, ErrorState, EmptyState, Notice, InlineFeedback, AppMark, StatusBadge, ScoreBadge, DataTable } from "./components/shared";
 import { AuthPage } from "./features/auth/AuthPage";
 import { AppUser } from "./features/auth/auth.types";
@@ -7,17 +11,7 @@ import { AppUser } from "./features/auth/auth.types";
 type RecordValue = Record<string, any>;
 type BrowserLocation = { pathname: string; search: string };
 
-type NavItem = { path: string; label: string; icon: string };
-const navItems: NavItem[] = [
-  { path: "/dashboard", label: "Dashboard", icon: "dashboard" },
-  { path: "/icps", label: "Ideal customer profiles", icon: "target" },
-  { path: "/prospects", label: "Prospects", icon: "building" },
-  { path: "/outreach", label: "Outreach", icon: "send" },
-  { path: "/next-actions", label: "Next actions", icon: "check-square" },
-  { path: "/activity", label: "Activity", icon: "activity" },
-  { path: "/usage", label: "Usage", icon: "chart" },
-  { path: "/settings", label: "Workspace settings", icon: "settings" },
-];
+
 
 function useBrowserLocation() {
   const [location, setLocation] = useState<BrowserLocation>(() => ({ pathname: window.location.pathname, search: window.location.search }));
@@ -35,130 +29,9 @@ function useBrowserLocation() {
   return { location, navigate };
 }
 
-function useRemote<T>(path: string | null, startupId?: string) {
-  const [data, setData] = useState<T | null>(null);
-  const [meta, setMeta] = useState<ApiEnvelope<T>["meta"]>();
-  const [loading, setLoading] = useState(Boolean(path));
-  const [error, setError] = useState<Error | null>(null);
-  const [version, setVersion] = useState(0);
-  useEffect(() => {
-    let active = true;
-    if (!path) { setLoading(false); setData(null); setError(null); setMeta(undefined); return () => { active = false; }; }
-    setLoading(true);
-    setError(null);
-    api.get<T>(path, startupId).then((result) => {
-      if (!active) return;
-      setData(result.data);
-      setMeta(result.meta);
-    }).catch((cause: unknown) => {
-      if (!active) return;
-      setError(cause instanceof Error ? cause : new Error(String(cause)));
-      setData(null);
-      setMeta(undefined);
-    }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [path, startupId, version]);
-  return { data, meta, loading, error, reload: () => setVersion((v) => v + 1) };
-}
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-function useMutation() {
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-  const [success, setSuccess] = useState("");
-  const execute = useCallback(async <T,>(work: () => Promise<T>, successText = "") => {
-    setPending(true); setError(null); setSuccess("");
-    try { const result = await work(); setSuccess(successText); return result; }
-    catch (cause) { setError(cause instanceof Error ? cause : new Error(String(cause))); return null; }
-    finally { setPending(false); }
-  }, []);
-  return { pending, error, success, execute, clearError: () => setError(null), setSuccess };
-}
-
-
-
-
-
-
-
-
-
-
-
-
-function WorkspacePicker({ navigate, setActiveWorkspace, activeWorkspaceId }: { navigate: (path: string) => void; setActiveWorkspace: (id: string) => void; activeWorkspaceId: string }) {
-  const { data, loading, error, reload } = useRemote<{ startups: RecordValue[] }>("/api/v1/startups");
-  const [creating, setCreating] = useState(false); const [name, setName] = useState("");
-  const create = useMutation();
-  const rows = data?.startups || [];
-  async function createWorkspace(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const response = await create.execute(() => api.post<RecordValue>("/api/v1/startups", { name: name.trim() }), "Workspace created.");
-    if (response) { const id = getId(response.data); if (id) { setActiveWorkspace(id); navigate("/dashboard"); } else reload(); }
-  }
-  return <main className="center-shell"><div className="workspace-wrap"><Logo/><div className="workspace-heading"><div><h1>{creating ? "Create a workspace" : "Choose a workspace"}</h1><p>{creating ? "A workspace keeps your sales data separated from other teams." : "Select a workspace to continue."}</p></div>{!creating && <Button icon="plus" onClick={() => { setCreating(true); setName(""); }}>Create workspace</Button>}</div>
-    {loading && <LoadingState label="Loading your workspaces…"/>}{error && <ErrorState error={error} retry={reload}/>}
-    {!loading && !error && !creating && rows.length === 0 && <EmptyState title="No workspace yet" description="Create your first workspace to keep your customer profiles and outreach together." action={<Button icon="plus" onClick={() => setCreating(true)}>Create workspace</Button>}/>}
-    {!loading && !error && !creating && rows.length > 0 && <div className="workspace-list">{rows.map((workspace) => { const id = getId(workspace); return <button className={`workspace-card ${activeWorkspaceId === id ? "workspace-card-selected" : ""}`} key={id || workspace.startupName} onClick={() => { if (id) { setActiveWorkspace(id); navigate("/dashboard"); } }}><span className="workspace-avatar"><AppMark name={workspace.startupName}/></span><span><b>{workspace.startupName || workspace.name || "Workspace"}</b><small>{workspace.role || "Member"} · {workspace.plan || "Plan not specified"}</small></span><StatusBadge value={workspace.startupStatus || workspace.status || "unknown"}/><Icon name="chevron" size={18}/></button>; })}</div>}
-    {creating && <form className="card form-card workspace-create" onSubmit={createWorkspace}><Field label="Workspace name" value={name} onChange={setName} placeholder="e.g. Acme Ventures" required minLength={1} maxLength={80}/><p className="field-help">Creating a workspace does not configure or promise a specific spend cap.</p><InlineFeedback error={create.error} success={create.success}/><div className="form-actions"><Button variant="secondary" onClick={() => setCreating(false)}>Cancel</Button><Button type="submit" loading={create.pending}>Create workspace</Button></div></form>}
-    <p className="workspace-note"><Icon name="info" size={15}/> API permissions and workspace membership are validated by the server.</p>
-  </div></main>;
-}
-
-function AppShell({ user, startupId, navigate, location, onLogout, setActiveWorkspace }: {
-  user: AppUser; startupId: string; navigate: (path: string, replace?: boolean) => void; location: BrowserLocation; onLogout: () => void; setActiveWorkspace: (id: string) => void;
-}) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const current = useRemote<{ startup: RecordValue }>("/api/v1/startups/current", startupId);
-  const startup = current.data?.startup;
-  const cap = startup?.capabilities || {};
-  const spend = startup?.spend || {};
-  const spendConfigured = typeof spend.capPaise === "number" && spend.capPaise > 0;
-  const trialExpired = startup?.status === "trial_expired";
-  const budgetExhausted = startup?.status === "budget_blocked" || (spendConfigured && typeof spend.remainingPaise === "number" && spend.remainingPaise <= 0);
-  const activePath = location.pathname;
-  useEffect(() => {
-    if (current.error instanceof ApiRequestError && ["NOT_A_MEMBER", "UNAUTHENTICATED"].includes(current.error.code)) {
-      setActiveWorkspace(""); navigate(current.error.code === "UNAUTHENTICATED" ? "/login" : "/workspaces", true);
-    }
-  }, [current.error, navigate, setActiveWorkspace]);
-  const navTo = (path: string) => { navigate(path); setMenuOpen(false); };
-  return <div className="app-shell">
-    <aside className={`sidebar ${menuOpen ? "open" : ""}`}><div className="sidebar-brand"><Logo light/><button className="mobile-close" onClick={() => setMenuOpen(false)} aria-label="Close navigation"><Icon name="close"/></button></div>
-      <div className="sidebar-workspace"><span className="mini-avatar">{(startup?.name || "W").slice(0, 1).toUpperCase()}</span><span><b>{startup?.name || "Active workspace"}</b><small>{startup?.me?.role || "Workspace member"}</small></span><button aria-label="Switch workspace" onClick={() => navTo("/workspaces")}>⌄</button></div>
-      <nav>{navItems.map((item) => { const active = activePath === item.path || (item.path === "/outreach" && activePath.startsWith("/outreach/")) || (item.path === "/prospects" && activePath.startsWith("/prospects/")) || (item.path === "/icps" && activePath.startsWith("/icps/")); return <button key={item.path} className={active ? "active" : ""} onClick={() => navTo(item.path)}><Icon name={item.icon} size={17}/><span>{item.label}</span></button>; })}</nav>
-      <div className="sidebar-footer"><div className="avatar">{user.name?.trim().slice(0, 1).toUpperCase() || "U"}</div><div className="user-details"><b>{user.name || "Workspace user"}</b><small>{user.email}</small></div><button className="icon-button logout-button" aria-label="Sign out" title="Sign out" onClick={onLogout}><Icon name="logout" size={16}/></button></div>
-    </aside>
-    {menuOpen && <button className="mobile-overlay" aria-label="Close navigation" onClick={() => setMenuOpen(false)}/>}
-    <div className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenuOpen(true)} aria-label="Open navigation"><Icon name="menu"/></button><div className="topbar-context"><span className="topbar-breadcrumb">Workspace</span><span className="topbar-separator">/</span><b>{startup?.name || "Loading…"}</b></div><div className="top-actions"><span className="topbar-spend" title={spendConfigured ? "Remaining configured workspace budget, as reported by the API" : "A spend cap has not been configured"}>{spendConfigured ? `${formatMoneyPaise(spend.remainingPaise, "estimated")} remaining` : "Spend not configured"}</span><span className="topbar-plan">{startup?.plan ? String(startup.plan).toUpperCase() : "MVP PREVIEW"}</span><span className="avatar top-avatar" aria-label="Signed in as current user" title={user.email}>{user.name?.trim().slice(0, 1).toUpperCase() || "U"}</span></div></header>
-      {startup && (trialExpired || budgetExhausted) && <div className="global-banner"><Icon name="info" size={17}/><span>{trialExpired ? "Your trial has ended. Existing data remains available, but some write actions may be blocked by the backend." : "This workspace has reached its configured usage limit. Paid actions may be blocked by the backend."}</span></div>}
-      {current.loading && <div className="shell-loading"><LoadingState label="Verifying workspace access…"/></div>}
-      {current.error && <div className="content"><ErrorState error={current.error} retry={current.reload}/><Button variant="secondary" onClick={() => navigate("/workspaces")}>Choose workspace</Button></div>}
-      {startup && !current.error && <main className="content">{renderRoute({ path: location.pathname, search: location.search, startupId, startup, capabilities: cap, navigate, reloadWorkspace: current.reload, user })}</main>}
-    </div>
-  </div>;
-}
 
 function renderRoute(context: { path: string; search: string; startupId: string; startup: RecordValue; capabilities: RecordValue; navigate: (path: string) => void; reloadWorkspace: () => void; user: AppUser }) {
   const { path } = context;
@@ -654,6 +527,6 @@ export default function App() {
   if (!user) return <main className="center-shell"><div className="loading-brand"><Logo/><LoadingState label="Opening sign in…"/></div></main>;
   if (location.pathname === "/workspaces") return <WorkspacePicker navigate={navigate} setActiveWorkspace={setActiveWorkspace} activeWorkspaceId={activeWorkspaceIdState}/>;
   if (!activeWorkspaceIdState) return <WorkspacePicker navigate={navigate} setActiveWorkspace={setActiveWorkspace} activeWorkspaceId={activeWorkspaceIdState}/>;
-  return <AppShell key={activeWorkspaceIdState} user={user} startupId={activeWorkspaceIdState} navigate={navigate} location={location} onLogout={() => void logout()} setActiveWorkspace={setActiveWorkspace}/>;
+  return <AppShell key={activeWorkspaceIdState} user={user} startupId={activeWorkspaceIdState} navigate={navigate} location={location} onLogout={() => void logout()} setActiveWorkspace={setActiveWorkspace} renderContent={(context) => renderRoute(context)}/>;
 }
 
