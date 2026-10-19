@@ -1,484 +1,172 @@
-export const icp = {
-  description:
-    "AI-powered workflow automation platform for growing B2B SaaS companies.",
-
-  industries: [
-    "B2B SaaS",
-    "Enterprise Software",
-    "HR Tech",
-  ],
-
-  companySize: {
-    min: 50,
-    max: 500,
-  },
-
-  geographies: ["India"],
-
-  decisionMakerTitles: [
-    "Founder",
-    "Co-Founder",
-    "VP Sales",
-    "Head of Growth",
-    "VP Revenue",
-    "HR Head",
-  ],
-
-  exclusions: [
-    "Companies below 50 employees",
-    "B2C companies",
-    "Non-India companies",
-  ],
-};
-/* =========================================================
-   STARTUP
-========================================================= */
-
-export const startup = {
-  name: "ABC Technologies",
-  founder: "Aslesha M",
-  product:
-    "AI-powered workflow automation platform for growing SaaS companies.",
-  industry: "B2B SaaS",
-  geography: "India, Singapore, UAE",
-};
-
-/* =========================================================
-   DASHBOARD METRICS
-========================================================= */
-
-export const metrics = {
-  prospectsFound: 25,
-  hotLeads: 12,
-  messagesReady: 10,
-  followUps: 8,
-  meetings: 3,
-};
-
-/* =========================================================
-   PROSPECTS
-========================================================= */
-
-export const prospects = [
+export const initialProspects = [
   {
-    id: "acme-technologies",
-    company: "Acme Technologies",
-    industry: "B2B SaaS",
-    location: "Bangalore",
-    employees: "51–200",
-    score: 96,
-    status: "Hot",
-    signal: "Hiring Revenue Operations",
-    description:
-      "Fast-growing B2B SaaS company expanding its revenue operations team.",
-
-    decisionMaker: {
-      name: "Rohan Mehta",
-      title: "VP Revenue",
-      email: "rohan@acmetech.example",
-      linkedin: "linkedin.com/in/rohan-mehta",
-    },
-
-    whyNow:
-      "Acme is actively expanding revenue operations, creating a strong timing signal.",
-
-    whyContact:
-      "The company strongly matches the ICP and has a clear sales-growth trigger.",
-
-    nextAction: "Send personalized email",
+    id: "p1", company: "Northstar Labs", industry: "B2B SaaS", location: "Bengaluru, India",
+    size: "51–200", score: 94, priority: "Hot", status: "Ready to contact", trigger: "Hiring activity", buyingSignal: "Operations roles listed", intent: "No reply recorded", evidence: "Illustrative hiring signal in mock record", stageAgeDays: 2, createdAtDays: 3,
+    website: "northstarlabs.example", description: "Workflow automation platform for mid-market operations teams.",
+    signal: "Hiring 3 customer operations roles", signalDate: "Observed recently",
+    whyNow: "The open operations roles may indicate a growing workload and a potential need for workflow automation. This is a hypothesis to validate, not proof of buying intent.",
+    person: "Maya Iyer", role: "VP of Operations", email: "maya@northstarlabs.example",
+    fit: ["B2B SaaS business model", "Within the target company-size range", "Operations leader matches the target buyer role"],
+    source: "Illustrative mock record — not live Apollo data"
   },
-
   {
-    id: "nova-systems",
-    company: "Nova Systems",
-    industry: "Enterprise Software",
-    location: "Mumbai",
-    employees: "201–500",
-    score: 91,
-    status: "Hot",
-    signal: "Series B expansion",
-    description:
-      "Enterprise software company scaling customer acquisition after recent funding.",
-
-    decisionMaker: {
-      name: "Priya Shah",
-      title: "Head of Growth",
-      email: "priya@novasystems.example",
-      linkedin: "linkedin.com/in/priya-shah",
-    },
-
-    whyNow:
-      "Recent funding creates pressure to scale acquisition efficiently.",
-
-    whyContact:
-      "Nova strongly matches the company-size and geography criteria.",
-
-    nextAction: "Review outreach draft",
+    id: "p2", company: "OrbitScale", industry: "Technology", location: "Chennai, India",
+    size: "11–50", score: 88, priority: "High", status: "Contacted", trigger: "Content engagement", buyingSignal: "Process-scaling content", intent: "No reply recorded", evidence: "Illustrative public-content observation", stageAgeDays: 4, createdAtDays: 8,
+    website: "orbitscale.example", description: "A growing software team building tools for distributed businesses.",
+    signal: "Recently published a guide on scaling internal processes", signalDate: "Example content signal",
+    whyNow: "The content topic is related to process scaling, so it may be a useful conversation opener. Confirm relevance before assuming an active project.",
+    person: "Arjun Raman", role: "Founder", email: "arjun@orbitscale.example",
+    fit: ["Early-stage company", "Founder is directly involved in buying decisions", "Pain-point alignment needs validation"],
+    source: "Illustrative mock record — not live Apollo data"
   },
-
   {
-    id: "vertex-labs",
-    company: "Vertex Labs",
-    industry: "AI SaaS",
-    location: "Chennai",
-    employees: "51–200",
-    score: 87,
-    status: "High",
-    signal: "New VP Sales",
-    description:
-      "AI SaaS company with a recently appointed sales leadership team.",
-
-    decisionMaker: {
-      name: "Arjun Rao",
-      title: "VP Sales",
-      email: "arjun@vertexlabs.example",
-      linkedin: "linkedin.com/in/arjun-rao",
-    },
-
-    whyNow:
-      "A new sales leader often reviews tooling and processes during the first 90 days.",
-
-    whyContact:
-      "The company matches the ICP and has a strong leadership-change trigger.",
-
-    nextAction: "Research recent announcement",
+    id: "p3", company: "BrightPath Systems", industry: "Business Services", location: "Hyderabad, India",
+    size: "51–200", score: 76, priority: "High", status: "Follow-up due", trigger: "No verified trigger", buyingSignal: "Unavailable", intent: "No reply recorded", evidence: "No reliable recent timing evidence supplied", stageAgeDays: 6, createdAtDays: 15,
+    website: "brightpath.example", description: "Business services company with a growing client delivery team.",
+    signal: "No reliable recent signal available", signalDate: "Not available",
+    whyNow: "No verified timing signal is available in this demo record. Use the ICP fit to decide whether more research is worthwhile; do not imply urgency.",
+    person: "Neha Kapoor", role: "Head of Growth", email: "neha@brightpath.example",
+    fit: ["Industry may be relevant", "Company size matches", "Timing evidence is currently missing"],
+    source: "Illustrative mock record — not live Apollo data"
   },
-
   {
-    id: "bright-hire",
-    company: "BrightHire",
-    industry: "HR Tech",
-    location: "Hyderabad",
-    employees: "51–200",
-    score: 82,
-    status: "High",
-    signal: "Customer success growth",
-    description:
-      "HR technology startup expanding its customer-facing operations.",
-
-    decisionMaker: {
-      name: "Neha Iyer",
-      title: "Co-Founder",
-      email: "neha@brighthire.example",
-      linkedin: "linkedin.com/in/neha-iyer",
-    },
-
-    whyNow:
-      "Expansion in customer-facing teams suggests increasing operational complexity.",
-
-    whyContact:
-      "BrightHire fits the startup profile and the founder is directly involved in growth.",
-
-    nextAction: "Add personalized context",
+    id: "p4", company: "CloudHarbor", industry: "Cloud Software", location: "Pune, India",
+    size: "201–500", score: 63, priority: "Medium", status: "Interested", trigger: "Partnership update", buyingSignal: "Partner page expanded", intent: "Positive — illustrative reply state", evidence: "Illustrative public-site observation", stageAgeDays: 3, createdAtDays: 24,
+    website: "cloudharbor.example", description: "Cloud software vendor serving growing technology teams.",
+    signal: "Expanded its partner page", signalDate: "Example public-site observation",
+    whyNow: "The partnership update could create a relevant reason to learn about their priorities, but the relationship to your offer needs confirmation.",
+    person: "Karan Shah", role: "Director, Business Development", email: "karan@cloudharbor.example",
+    fit: ["Adjacent industry", "Potential buyer role identified", "Company size is near the upper edge of the example range"],
+    source: "Illustrative mock record — not live Apollo data"
   },
-
   {
-    id: "cloudnest",
-    company: "CloudNest",
-    industry: "Cloud Software",
-    location: "Pune",
-    employees: "51–200",
-    score: 68,
-    status: "Medium",
-    signal: "B2B sales expansion",
-    description:
-      "Cloud software company expanding its B2B sales motion.",
-
-    decisionMaker: {
-      name: "Karan Malhotra",
-      title: "Founder",
-      email: "karan@cloudnest.example",
-      linkedin: "linkedin.com/in/karan-malhotra",
-    },
-
-    whyNow:
-      "The company is expanding its B2B sales activity.",
-
-    whyContact:
-      "The company partially matches the ICP but has a weaker timing signal.",
-
-    nextAction: "Monitor account",
+    id: "p5", company: "Evergreen Digital", industry: "Digital Services", location: "Mumbai, India",
+    size: "11–50", score: 48, priority: "Low", status: "Research needed", trigger: "No verified trigger", buyingSignal: "Unavailable", intent: "Unknown", evidence: "Insufficient evidence; further research needed", stageAgeDays: 9, createdAtDays: 40,
+    website: "evergreen.example", description: "Digital services studio serving small and mid-sized businesses.",
+    signal: "No signal supplied", signalDate: "Not available",
+    whyNow: "The current record has limited evidence of fit and no timing signal. Research further or deprioritize instead of inventing a reason to contact.",
+    person: "Riya Menon", role: "Managing Director", email: "riya@evergreen.example",
+    fit: ["Company size may fit", "Industry match is uncertain", "More context needed"],
+    source: "Illustrative mock record — not live Apollo data"
   },
-
   {
-    id: "pixelworks",
-    company: "PixelWorks",
-    industry: "Marketing Technology",
-    location: "Delhi",
-    employees: "11–50",
-    score: 54,
-    status: "Low",
-    signal: "Weak ICP match",
-    description:
-      "Small marketing technology startup serving SMB customers.",
-
-    decisionMaker: {
-      name: "Aditya Kapoor",
-      title: "Founder",
-      email: "aditya@pixelworks.example",
-      linkedin: "linkedin.com/in/aditya-kapoor",
-    },
-
-    whyNow:
-      "No strong recent buying signal was detected.",
-
-    whyContact:
-      "Some ICP attributes match, but current timing confidence is low.",
-
-    nextAction: "Keep in nurture",
-  },
+    id: "p6", company: "Fieldnote Tech", industry: "B2B Software", location: "Delhi, India",
+    size: "51–200", score: 91, priority: "Hot", status: "Ready to contact", trigger: "Workflow pain signal", buyingSignal: "Manual reporting described", intent: "Potential interest — unconfirmed", evidence: "Illustrative product-page observation", stageAgeDays: 1, createdAtDays: 60,
+    website: "fieldnote.example", description: "Software company supporting teams that coordinate field operations.",
+    signal: "Product page describes manual reporting workflows", signalDate: "Example website observation",
+    whyNow: "Manual reporting is potentially relevant to an automation offer. Treat it as a conversation hypothesis and validate it with the buyer.",
+    person: "Dev Malhotra", role: "COO", email: "dev@fieldnote.example",
+    fit: ["Relevant operational workflow", "Company size matches", "COO is a plausible stakeholder"],
+    source: "Illustrative mock record — not live Apollo data"
+  }
 ];
 
-/* =========================================================
-   FOLLOW-UPS
-========================================================= */
+const extraCompanies = [
+  ["BluePeak Analytics","B2B SaaS","Bengaluru, India","51–200","Data analytics platform for growing revenue teams.","VP of Revenue Operations"],
+  ["NovaGrid Systems","Cloud Software","Hyderabad, India","201–500","Cloud infrastructure tooling for digital businesses.","Director of Operations"],
+  ["CedarWorks Digital","Digital Services","Chennai, India","11–50","Digital product studio supporting scale-ups.","Founder"],
+  ["LumenDesk","HR Technology","Pune, India","51–200","People operations software for distributed teams.","Head of People Operations"],
+  ["KiteBridge","FinTech","Mumbai, India","51–200","Workflow tools for finance and compliance teams.","COO"],
+  ["SignalNest","Marketing Technology","Delhi, India","11–50","Marketing analytics for B2B teams.","VP of Marketing"],
+  ["Ironwood Cloud","Cloud Software","Bengaluru, India","201–500","Cloud cost visibility and governance software.","Head of Engineering"],
+  ["MosaicFlow","Business Services","Jaipur, India","51–200","Workflow services for multi-location businesses.","Operations Director"],
+  ["OrbitLedger","FinTech","Chennai, India","11–50","Financial operations software for SMEs.","Founder"],
+  ["BrightForge AI","AI Software","Hyderabad, India","51–200","AI tools for internal knowledge workflows.","Head of Product"],
+  ["CobaltWorks","B2B SaaS","Mumbai, India","201–500","Customer workflow platform for mid-market teams.","VP of Customer Success"],
+  ["Pinecone Retail Tech","Retail Technology","Pune, India","51–200","Retail operations software for growing chains.","Retail Operations Head"],
+  ["VantageLoop","Logistics Technology","Delhi, India","51–200","Logistics visibility tools for operations teams.","COO"],
+  ["TerraMetric","Climate Technology","Bengaluru, India","11–50","Reporting tools for sustainability teams.","Founder"],
+  ["HelioStack","Developer Tools","Hyderabad, India","51–200","Developer productivity software for engineering teams.","VP of Engineering"],
+  ["MapleLine Services","Professional Services","Kochi, India","11–50","Consulting firm modernizing client delivery.","Managing Partner"],
+  ["VertexPath","EdTech","Chennai, India","51–200","Learning operations platform for workforce training.","Head of Growth"],
+  ["AmberField Systems","Manufacturing Software","Coimbatore, India","201–500","Production planning software for manufacturers.","Operations Director"],
+  ["Northwind Commerce","E-commerce","Bengaluru, India","51–200","Commerce enablement tools for D2C brands.","Head of E-commerce"],
+  ["ClearRoute Mobility","Mobility Technology","Delhi, India","201–500","Fleet coordination software for mobility operators.","VP of Operations"],
+  ["PrismCloud","Cloud Software","Pune, India","51–200","Cloud migration services for SaaS teams.","Founder"],
+  ["Evertrail Data","Data Services","Mumbai, India","11–50","Data quality tooling for analytics teams.","Head of Data"],
+  ["AsterLoop","Healthcare Technology","Hyderabad, India","51–200","Administrative workflow software for clinics.","Operations Head"],
+  ["Redwood CX","Customer Experience","Bengaluru, India","51–200","Customer support analytics and workflow tools.","VP of Customer Experience"],
+  ["Silverline Ops","Business Services","Ahmedabad, India","11–50","Process improvement services for growing companies.","Founder"],
+  ["CloudCanvas","Design Software","Chennai, India","51–200","Collaboration tools for product design teams.","Product Director"],
+  ["MeridianPay","FinTech","Mumbai, India","201–500","Payments operations platform for digital businesses.","Finance Operations Head"],
+  ["FieldSpring","AgriTech","Pune, India","51–200","Digital workflow software for agricultural supply chains.","COO"],
+  ["Wavefront Security","Cybersecurity","Bengaluru, India","51–200","Security workflow tools for IT teams.","Security Operations Lead"],
+  ["UrbanLedger","Property Technology","Chennai, India","11–50","Property management software for commercial portfolios.","Managing Director"],
+  ["SageOrbit","Consulting Technology","Hyderabad, India","51–200","Client delivery systems for consulting teams.","Delivery Director"],
+  ["Peakline Software","B2B SaaS","Noida, India","201–500","Business software for distributed sales teams.","VP of Sales Operations"],
+  ["Daybreak Systems","IT Services","Kochi, India","51–200","Managed IT and automation services.","Operations Manager"],
+  ["FathomWorks","Analytics","Bengaluru, India","11–50","Decision-support dashboards for leadership teams.","Founder"],
+  ["OpenHarbor","Supply Chain Technology","Mumbai, India","51–200","Supply chain planning tools for manufacturers.","Supply Chain Director"],
+  ["KindredHR","HR Technology","Pune, India","11–50","Hiring coordination and onboarding software.","Head of People"],
+  ["SummitDesk","Productivity Software","Chennai, India","51–200","Task and knowledge management for growing teams.","COO"],
+  ["Westbridge AI","AI Software","Bengaluru, India","11–50","AI assistants for internal business processes.","Founder"],
+  ["BlueOak Networks","Telecommunications","Delhi, India","201–500","Network service operations platform.","Operations Director"],
+  ["JuniperWorks","Business Software","Hyderabad, India","51–200","Workflow automation for professional teams.","Head of Business Operations"],
+  ["NovaLedger","Accounting Technology","Mumbai, India","11–50","Accounting workflow software for small firms.","Founder"],
+  ["GranitePath","Construction Technology","Pune, India","51–200","Project coordination tools for contractors.","Project Operations Head"],
+  ["Skyward Commerce","E-commerce","Bengaluru, India","51–200","Tools for marketplace sellers and operators.","Marketplace Director"],
+  ["ElmStreet Labs","Research Technology","Chennai, India","11–50","Research workflow software for technical teams.","Research Operations Lead"],
+]
+const stageCycle = ["Ready to contact","Contacted","Follow-up due","Interested","Research needed","Ready to contact","Contacted","Meeting requested","Follow-up due","Ready to contact"]
+const triggerCycle = ["Hiring activity","Product update","Content engagement","Partnership update","No verified trigger","Workflow pain signal","Leadership change","Expansion signal","No verified trigger","New initiative — unconfirmed"]
+const signalCycle = ["Relevant role advertised","Product page update","Industry guide published","Partner page update","Unavailable","Manual workflow described","Leadership profile updated","New location listed","Unavailable","Initiative mentioned in public content"]
+const intentCycle = ["No reply recorded","No reply recorded","Unknown","Positive — illustrative reply state","Unknown","No reply recorded","Neutral — illustrative reply state","Negative — illustrative reply state","No reply recorded","Neutral — illustrative reply state"]
+export const generatedProspects = extraCompanies.map((c, i) => {
+  const score = [96,91,87,82,78,73,68,64,59,54,49,45,93,89,84,79,74,69,65,60,56,51,47,42,90,86,81,76,71,66,62,57,52,48,44,39,88,83,77,72,67,61,55,46][i]
+  const status = stageCycle[i % stageCycle.length]
+  const trigger = triggerCycle[i % triggerCycle.length]
+  const signal = signalCycle[i % signalCycle.length]
+  return {
+    id: `p${i+7}`, company:c[0], industry:c[1], location:c[2], size:c[3], score,
+    priority: score >= 90 ? "Hot" : score >= 70 ? "High" : score >= 50 ? "Medium" : "Low",
+    status, trigger, buyingSignal:signal, intent:intentCycle[i % intentCycle.length],
+    stageAgeDays: (i * 3) % 12 + 1, createdAtDays: (i * 2 + 1) % 90,
+    website: c[0].toLowerCase().replace(/[^a-z0-9]/g, "") + ".example",
+    description:c[4], signal:signal === "Unavailable" ? "No reliable recent signal available" : signal,
+    signalDate: signal === "Unavailable" ? "Not available" : "Illustrative mock observation",
+    whyNow: signal === "Unavailable" ? "No reliable timing evidence is available in this sample. Use ICP fit to decide whether more research is worthwhile; do not infer urgency." : `${signal} may provide a relevant conversation opener, but it is illustrative mock evidence and should be validated before assuming active buying intent.`,
+    person: ["Aarav Mehta","Isha Nair","Rohan Das","Ananya Rao","Kabir Shah","Diya Menon","Vihaan Patel","Meera Iyer","Aditya Bose","Sara Thomas"][i % 10],
+    role:c[5], email:`contact${i+7}@${c[0].toLowerCase().replace(/[^a-z0-9]/g,"")}.example`,
+    fit:[`${c[1]} may align with the target market`,`Company size: ${c[3]}`,`${c[5]} is a plausible stakeholder; validate buying authority`],
+    evidence: signal === "Unavailable" ? "No reliable recent timing evidence supplied" : `Illustrative ${trigger.toLowerCase()} record; not externally verified`,
+    source:"Illustrative mock record — not live Apollo data"
+  }
+})
+export const allInitialProspects = [...initialProspects, ...generatedProspects]
 
-export const followUps = [
+export const initialOutreach = [
   {
-    id: 1,
-    company: "Acme Technologies",
-    contact: "Rohan Mehta",
-    stage: "Follow-up #1",
-    due: "Today",
-    priority: "High",
-    reason: "No reply after personalized first email.",
+    id: "o1", prospectId: "p1", company: "Northstar Labs", person: "Maya Iyer",
+    subject: "A thought on scaling operations at Northstar",
+    body: "Hi Maya,\n\nI noticed Northstar is growing its customer operations team. Teams at that stage sometimes start reviewing how repeatable workflows are handled.\n\nWould it be useful to compare notes on where automation could reduce manual work? If this isn't a current priority, no worries.\n\nBest,\n[Founder name]",
+    status: "Needs review", step: "Initial email", intent: "Not received"
   },
-
   {
-    id: 2,
-    company: "Nova Systems",
-    contact: "Priya Shah",
-    stage: "Follow-up #2",
-    due: "Today",
-    priority: "High",
-    reason: "Opened the email twice but has not replied.",
+    id: "o2", prospectId: "p2", company: "OrbitScale", person: "Arjun Raman",
+    subject: "Question about scaling internal processes",
+    body: "Hi Arjun,\n\nI came across OrbitScale's material on scaling internal processes. It made me curious how your team currently handles repeatable operational work.\n\nIf improving that workflow is on your roadmap, would a short conversation be worthwhile?\n\nBest,\n[Founder name]",
+    status: "Approved (demo)", step: "Initial email", intent: "Not received"
   },
-
   {
-    id: 3,
-    company: "Vertex Labs",
-    contact: "Arjun Rao",
-    stage: "Follow-up #1",
-    due: "Today",
-    priority: "Medium",
-    reason: "New sales leader detected.",
-  },
-
-  {
-    id: 4,
-    company: "BrightHire",
-    contact: "Neha Iyer",
-    stage: "Follow-up #1",
-    due: "Tomorrow",
-    priority: "Medium",
-    reason: "Email delivered successfully.",
-  },
-
-  {
-    id: 5,
-    company: "CloudNest",
-    contact: "Karan Malhotra",
-    stage: "Nurture",
-    due: "Friday",
-    priority: "Low",
-    reason: "No immediate buying signal detected.",
-  },
+    id: "o3", prospectId: "p3", company: "BrightPath Systems", person: "Neha Kapoor",
+    subject: "Following up on my earlier note",
+    body: "Hi Neha,\n\nI wanted to follow up once on my earlier note about streamlining repeatable delivery workflows. If it is relevant, I can share a short example; if not, I am happy to close the loop.\n\nBest,\n[Founder name]",
+    status: "Scheduled (demo)", step: "Follow-up 1", intent: "Not received"
+  }
 ];
 
-/* =========================================================
-   DECISION MAKERS
-========================================================= */
+export const allInitialOutreach = [
+  ...initialOutreach,
+  ...allInitialProspects.slice(3,15).map((p, i) => ({
+    id:`o${i+4}`, prospectId:p.id, company:p.company, person:p.person,
+    subject:`A question about ${p.industry.toLowerCase()} workflows at ${p.company}`,
+    body:`Hi ${p.person.split(" ")[0]},\n\nI’m reaching out because ${p.company} operates in ${p.industry.toLowerCase()}. We work with teams looking to make repeatable workflows easier to manage.\n\nIf improving this area is relevant to your team, would a short conversation be useful? If it is not a priority right now, no worries.\n\nBest,\n[Founder name]`,
+    status:"Needs review", step:"Initial email", intent:"Not received"
+  }))
+]
 
-export const decisionMakers = prospects.map((prospect) => ({
-  ...prospect.decisionMaker,
-  company: prospect.company,
-  industry: prospect.industry,
-  location: prospect.location,
-  score: prospect.score,
-  status: prospect.status,
-}));
-
-/* =========================================================
-   OUTREACH
-========================================================= */
-
-export const outreach = [
-  {
-    id: 1,
-    company: "Acme Technologies",
-    contact: "Rohan Mehta",
-    role: "VP Revenue",
-    score: 96,
-
-    subject: "Scaling revenue operations at Acme",
-
-    body: `Hi Rohan,
-
-I noticed Acme is expanding its revenue operations team.
-
-At this stage, growing sales teams often spend significant time coordinating prospect research, follow-ups, and account prioritization.
-
-We're building an AI Sales Copilot that helps teams identify the right accounts, understand why now, and turn research into personalized outreach.
-
-Would it be useful if I showed you how it works with a few Acme-like accounts?
-
-Best,
-Aslesha`,
-
-    followUp1: "Would it be useful if I shared a quick example?",
-    followUp2: "Happy to send over a short walkthrough if helpful.",
-
-    status: "Ready for approval",
-  },
-
-  {
-    id: 2,
-    company: "Nova Systems",
-    contact: "Priya Shah",
-    role: "Head of Growth",
-    score: 91,
-
-    subject: "A thought on Nova's growth motion",
-
-    body: `Hi Priya,
-
-Congrats on Nova's recent growth.
-
-As teams scale after a funding round, keeping prospect research and outreach personalized can become surprisingly time-consuming.
-
-We're building an AI Sales Copilot that helps teams prioritize relevant accounts and generate contextual outreach around the signals behind each prospect.
-
-Open to a quick look?
-
-Best,
-Aslesha`,
-
-    followUp1: "Would a short 10-minute walkthrough be useful?",
-    followUp2: "Happy to share a few examples relevant to Nova.",
-
-    status: "Draft",
-  },
-
-  {
-    id: 3,
-    company: "Vertex Labs",
-    contact: "Arjun Rao",
-    role: "VP Sales",
-    score: 87,
-
-    subject: "Sales workflow at Vertex Labs",
-
-    body: `Hi Arjun,
-
-I noticed Vertex Labs recently added new sales leadership.
-
-New sales teams often spend the first few months reviewing their prospecting workflow, prioritization, and outreach process.
-
-We're building an AI Sales Copilot that automates much of that workflow.
-
-Would you be open to a quick look?
-
-Best,
-Aslesha`,
-
-    followUp1: "Would it make sense to send over a short example?",
-    followUp2: "Happy to reconnect when the timing is better.",
-
-    status: "Ready for approval",
-  },
+export const initialActivities = [
+  { id: 1, title: "ICP approved", detail: "Your example ICP is ready for prospect discovery.", time: "Today", kind: "check" },
+  { id: 2, title: "Northstar Labs prioritized", detail: "High ICP fit; timing hypothesis needs validation.", time: "Today", kind: "sparkles" },
+  { id: 3, title: "Outreach draft created", detail: "Founder review required before any real sending.", time: "Today", kind: "mail" }
 ];
-
-/* =========================================================
-   MEETINGS
-========================================================= */
-
-export const meetings = [
-  {
-    id: 1,
-    company: "Acme Technologies",
-    contact: "Rohan Mehta",
-    date: "Today",
-    time: "4:30 PM",
-    status: "Confirmed",
-  },
-
-  {
-    id: 2,
-    company: "Nova Systems",
-    contact: "Priya Shah",
-    date: "Tomorrow",
-    time: "11:00 AM",
-    status: "Confirmed",
-  },
-
-  {
-    id: 3,
-    company: "Vertex Labs",
-    contact: "Arjun Rao",
-    date: "Friday",
-    time: "3:00 PM",
-    status: "Pending",
-  },
-];
-
-/* =========================================================
-   PIPELINE / ANALYTICS
-========================================================= */
-
-export const analytics = {
-  weeklyActivity: [
-    {
-      day: "Mon",
-      researched: 8,
-      contacted: 4,
-    },
-    {
-      day: "Tue",
-      researched: 12,
-      contacted: 6,
-    },
-    {
-      day: "Wed",
-      researched: 10,
-      contacted: 5,
-    },
-    {
-      day: "Thu",
-      researched: 15,
-      contacted: 8,
-    },
-    {
-      day: "Fri",
-      researched: 5,
-      contacted: 3,
-    },
-  ],
-
-  funnel: [
-    {
-      label: "Prospects Found",
-      value: 25,
-      percentage: 100,
-    },
-    {
-      label: "Hot Leads",
-      value: 12,
-      percentage: 48,
-    },
-    {
-      label: "Messages Ready",
-      value: 10,
-      percentage: 40,
-    },
-    {
-      label: "Follow-ups",
-      value: 8,
-      percentage: 32,
-    },
-    {
-      label: "Meetings Booked",
-      value: 3,
-      percentage: 12,
-    },
-  ],
-};

@@ -1,175 +1,347 @@
-import { Link } from "react-router-dom";
+
 import {
   ArrowRight,
+  CalendarDays,
   CheckCircle2,
-  Clock3,
+  CircleStop,
+  Compass,
   Mail,
+  Search,
   Sparkles,
-  UserRound,
+  Users,
+  Target,
+  ShieldCheck,
+  Clock,
+  XCircle,
 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { useState } from "react";
+import { usePrototype } from "../context/PrototypeContext";
+import { PageHeader, Pill } from "../components/UI";
 
-import { Card, PageHeader, Badge, ScoreRing } from "../components/UI";
+const getScore = (prospect) =>
+  Number(prospect.score ?? prospect.icpFitScore ?? 0);
 
-function NextBestAction() {
+const getPriority = (score) => {
+  if (score >= 90) return "Hot";
+  if (score >= 70) return "High";
+  if (score >= 50) return "Medium";
+  return "Low";
+};
+
+export default function NextBestAction() {
+  const { prospects = [], bookingUrl } = usePrototype();
+
+  const [draftStatus, setDraftStatus] = useState("Pending Approval");
+
+  // Exclude low-fit prospects from the eligible targeting count.
+  const eligibleProspects = prospects
+    .filter((prospect) => getScore(prospect) >= 50)
+    .sort((a, b) => getScore(b) - getScore(a));
+
+  const priorityProspects = eligibleProspects.filter(
+    (prospect) => getScore(prospect) >= 70
+  );
+
+  const featuredProspect = eligibleProspects[0];
+
+  const companyName = featuredProspect
+    ? featuredProspect.company || featuredProspect.name || "your selected company"
+    : "your selected company";
+
+  const companyIndustry =
+    featuredProspect?.industry || "the company's industry";
+
+  const companyId = featuredProspect?.id || "p1";
+
+  const picks = [
+    {
+      icon: Search,
+      title: "Research before reaching out",
+      detail:
+        "For accounts with missing timing evidence, verify the company context before referencing a buying signal.",
+      to: featuredProspect ? `/prospects/${companyId}` : "/prospects",
+      label: "Review research",
+    },
+    {
+      icon: Mail,
+      title: "Review a founder-approved email draft",
+      detail:
+        "Check personalization and ensure every claim is grounded in the visible record.",
+      to: "/outreach",
+      label: "Review drafts",
+    },
+    {
+      icon: CalendarDays,
+      title: "Offer a meeting when the prospect is interested",
+      detail: bookingUrl
+        ? `Your demo booking link is configured: ${bookingUrl}`
+        : "Add your own booking URL in Settings before using it in a meeting invitation.",
+      to: "/settings",
+      label: bookingUrl ? "Review booking settings" : "Add booking link",
+    },
+    {
+      icon: Users,
+      title: "Confirm the decision-maker",
+      detail:
+        "Validate the person's role and business contact details before sending.",
+      to: "/decision-makers",
+      label: "Review contacts",
+    },
+    {
+      icon: CircleStop,
+      title: "Stop when the fit or consent is not right",
+      detail:
+        "Respect opt-outs and do not continue outreach when a prospect is not a fit.",
+      to: "/follow-ups",
+      label: "Review queue",
+    },
+  ];
+
+  const handleApproval = () => {
+    setDraftStatus("Approved in prototype");
+  };
+
+  const handleRejection = () => {
+    setDraftStatus("Rejected in prototype");
+  };
+
   return (
-    <div>
+    <div className="next-best-action-page">
       <PageHeader
-        eyebrow="Copilot intelligence"
-        title="What should you do next?"
-        description="One prioritized action instead of another dashboard full of numbers."
+        eyebrow="RECOMMENDED NEXT STEP"
+        title="Next Best Action"
+        description="Your AI sales copilot recommends what to do next, prepares outreach drafts, and keeps you in control of every email."
       />
 
-      <Card className="overflow-hidden border-slate-900">
-        <div className="grid lg:grid-cols-[1fr_340px]">
-          {/* Main */}
-          <div className="p-6 sm:p-8">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-                <Sparkles size={18} />
-              </div>
+      {/* Daily recommendation */}
+      <section className="panel nba-daily-panel">
+        <div className="nba-daily-heading">
+          <div className="nba-feature-icon">
+            <Sparkles size={24} />
+          </div>
 
-              <span className="text-xs font-bold uppercase tracking-wide text-amber-700">
-                Recommended action
-              </span>
+          <div className="nba-daily-heading-copy">
+            <div className="eyebrow">YOUR DAILY SALES PLAN</div>
+            <h2>What should you focus on today?</h2>
+            <p>
+              Prioritize qualified prospects and review the suggested
+              outreach before sending.
+            </p>
+          </div>
+        </div>
+
+        <div className="nba-daily-stats">
+          <div className="nba-daily-stat">
+            <div className="nba-stat-icon">
+              <Target size={20} />
             </div>
+            <div>
+              <strong>{eligibleProspects.length}</strong>
+              <span>Companies eligible for targeting</span>
+            </div>
+          </div>
 
-            <h2 className="mt-5 max-w-2xl text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
-              Follow up with Rohan at Acme Technologies.
-            </h2>
+          <div className="nba-daily-stat">
+            <div className="nba-stat-icon">
+              <CheckCircle2 size={20} />
+            </div>
+            <div>
+              <strong>{priorityProspects.length}</strong>
+              <span>High-priority prospects</span>
+            </div>
+          </div>
 
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-500">
-              The account has strong ICP fit, a recent revenue-operations
-              hiring signal, and recent engagement with your first message.
-              Together, these signals make today a strong follow-up window.
+          <div className="nba-daily-stat">
+            <div className="nba-stat-icon">
+              <Clock size={20} />
+            </div>
+            <div>
+              <strong>{draftStatus === "Pending Approval" ? "1" : "0"}</strong>
+              <span>Sample draft awaiting review</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="nba-daily-recommendation">
+          <div className="nba-recommendation-copy">
+            <Pill tone="blue">Today's recommendation</Pill>
+
+            <h3>
+              {eligibleProspects.length} companies can be targeted today
+            </h3>
+
+            <p>
+              Start with high-fit companies, validate their available
+              information, and personalize your outreach. Low-fit prospects
+              are excluded from this targeting recommendation.
+            </p>
+          </div>
+
+          <Link className="button button-primary" to="/prospects">
+            View prospects <ArrowRight size={16} />
+          </Link>
+        </div>
+      </section>
+
+      {/* Outreach approval */}
+      <section className="panel nba-approval-panel">
+        <div className="nba-approval-heading">
+          <div className="nba-feature-icon">
+            <Mail size={23} />
+          </div>
+
+          <div className="nba-approval-heading-copy">
+            <div className="eyebrow">FOUNDER APPROVAL REQUIRED</div>
+            <h2>Review your suggested outreach</h2>
+            <p>
+              Review the example email below. Approve or reject the draft
+              before proceeding to the outreach workflow.
+            </p>
+          </div>
+
+          <Pill
+            tone={
+              draftStatus === "Pending Approval"
+                ? "blue"
+                : draftStatus === "Approved in prototype"
+                  ? "green"
+                  : undefined
+            }
+          >
+            {draftStatus}
+          </Pill>
+        </div>
+
+        <div className="nba-email-preview">
+          <div className="nba-email-meta">
+            <span>Company</span>
+            <strong>{companyName}</strong>
+          </div>
+
+          <div className="nba-email-meta">
+            <span>Industry</span>
+            <strong>{companyIndustry}</strong>
+          </div>
+
+          <div className="nba-email-meta">
+            <span>Subject</span>
+            <strong>
+              Exploring how we could support {companyName}
+            </strong>
+          </div>
+
+          <div className="nba-email-body">
+            <span className="eyebrow">SUGGESTED EMAIL DRAFT</span>
+
+            <p>Hello,</p>
+
+            <p>
+              I’m reaching out because our solution may be relevant to
+              {` ${companyName}`} and your team's goals in {companyIndustry}.
+              I would love to learn more about your current challenges and
+              explore whether we could help.
             </p>
 
-            <div className="mt-6 flex flex-wrap gap-2">
-              <Badge variant="hot">94 • Hot</Badge>
-              <Badge variant="success">Email opened</Badge>
-              <Badge variant="success">Buying signal</Badge>
-            </div>
+            <p>
+              Would you be open to a brief conversation?
+            </p>
 
-            <div className="mt-8">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                Suggested message
+            <p>Best regards,</p>
+            <p>[Your name and company]</p>
+          </div>
+
+          <div className="nba-approval-notice">
+            <ShieldCheck size={21} />
+            <div>
+              <strong>Please approve to do the outreach</strong>
+              <p>
+                Review the message and verify company details before
+                proceeding. Approval in this prototype does not send an email.
               </p>
-
-              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-5">
-                <p className="text-sm leading-6 text-slate-600">
-                  “Wanted to follow up because Acme's revenue operations
-                  expansion looks closely aligned with the workflow problems
-                  we're solving.”
-                </p>
-              </div>
             </div>
+          </div>
 
-            <div className="mt-7 flex flex-col gap-2 sm:flex-row">
-              <Link
-                to="/outreach"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-xs font-bold text-white hover:bg-slate-800"
+          <div className="nba-approval-actions">
+            <Link className="button button-secondary" to="/outreach">
+              <Mail size={16} />
+              Review outreach
+            </Link>
+
+            <div className="nba-approval-buttons">
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={handleRejection}
+                disabled={draftStatus === "Rejected in prototype"}
               >
-                Review outreach
-                <ArrowRight size={14} />
-              </Link>
+                <XCircle size={16} />
+                Reject
+              </button>
 
-              <button className="rounded-xl border border-slate-200 px-5 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50">
-                Snooze until tomorrow
+              <button
+                type="button"
+                className="button button-primary"
+                onClick={handleApproval}
+                disabled={draftStatus === "Approved in prototype"}
+              >
+                <CheckCircle2 size={16} />
+                Approve draft
               </button>
             </div>
           </div>
 
-          {/* Reasoning */}
-          <div className="border-t border-slate-200 bg-slate-50 p-6 lg:border-l lg:border-t-0">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              Copilot reasoning
+          {draftStatus !== "Pending Approval" && (
+            <p className="nba-prototype-status" role="status">
+              {draftStatus === "Approved in prototype"
+                ? "Draft marked as approved locally. No email has been sent."
+                : "Draft marked as rejected locally. No email has been sent."}
+              {" "}
+              Refreshing the page resets this prototype status.
             </p>
-
-            <div className="mt-5 space-y-5">
-              <Reason
-                icon={CheckCircle2}
-                title="Strong ICP fit"
-                text="Company size, industry and geography all match."
-              />
-
-              <Reason
-                icon={Clock3}
-                title="Why now"
-                text="Revenue operations hiring detected recently."
-              />
-
-              <Reason
-                icon={Mail}
-                title="Engagement"
-                text="First message was opened twice."
-              />
-
-              <Reason
-                icon={UserRound}
-                title="Right person"
-                text="VP of Revenue is the strongest decision-maker match."
-              />
-            </div>
-
-            <div className="mt-7 flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4">
-              <ScoreRing score={94} />
-
-              <div>
-                <p className="text-xs font-bold">Priority score</p>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  High confidence recommendation
-                </p>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
-      </Card>
+      </section>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        <SmallCard
-          number="01"
-          title="Find"
-          text="Identify the right accounts and people."
-        />
+      {/* Existing action playbook */}
+      <div className="section-title-row">
+        <div>
+          <h2>Action playbook</h2>
+          <p>Choose the action that matches the current context.</p>
+        </div>
+      </div>
 
-        <SmallCard
-          number="02"
-          title="Understand"
-          text="Explain why the prospect matters now."
-        />
+      <div className="nba-list">
+        {picks.map((pick, index) => (
+          <div className="nba-row" key={pick.title}>
+            <div className="nba-number">
+              {String(index + 1).padStart(2, "0")}
+            </div>
 
-        <SmallCard
-          number="03"
-          title="Act"
-          text="Recommend the next best sales action."
-        />
+            <div className="nba-icon">
+              <pick.icon size={19} />
+            </div>
+
+            <div className="nba-copy">
+              <strong>{pick.title}</strong>
+              <p>{pick.detail}</p>
+            </div>
+
+            <Link className="button button-secondary" to={pick.to}>
+              {pick.label} <ArrowRight size={15} />
+            </Link>
+          </div>
+        ))}
+      </div>
+
+      <div className="caution-note large-caution">
+        <Sparkles size={17} />
+        <span>
+          This page currently uses prototype data and a sample email template.
+          Live recommendations, AI-generated personalized drafts, persistent
+          approvals, and email sending require backend and service integration.
+        </span>
       </div>
     </div>
   );
 }
-
-function Reason({ icon: Icon, title, text }) {
-  return (
-    <div className="flex gap-3">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm">
-        <Icon size={14} className="text-slate-500" />
-      </div>
-
-      <div>
-        <p className="text-xs font-bold">{title}</p>
-        <p className="mt-1 text-[11px] leading-5 text-slate-500">{text}</p>
-      </div>
-    </div>
-  );
-}
-
-function SmallCard({ number, title, text }) {
-  return (
-    <Card className="p-5">
-      <span className="text-[10px] font-bold text-amber-600">{number}</span>
-      <p className="mt-3 text-sm font-bold">{title}</p>
-      <p className="mt-1 text-xs leading-5 text-slate-500">{text}</p>
-    </Card>
-  );
-}
-
-export default NextBestAction;
