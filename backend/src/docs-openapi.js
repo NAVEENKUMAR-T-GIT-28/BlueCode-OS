@@ -17,7 +17,7 @@ export const openApiSpec = {
   components: {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'Paste the JWT returned by POST /api/auth/login or register.' } },
     schemas: {
-      Error: { type: 'object', properties: { success: { type: 'boolean', example: false }, error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' }, details: { type: 'object' } } }, requestId: { type: 'string' } } },
+      Error: { type: 'object', required: ['success', 'error', 'code', 'requestId'], properties: { success: { type: 'boolean', example: false }, error: { type: 'string', example: 'Request validation failed' }, code: { type: 'string', example: 'VALIDATION_ERROR' }, details: { type: 'object' }, requestId: { type: 'string' } } },
       Credentials: { type: 'object', required: ['email','password'], properties: { email: { type: 'string', format: 'email' }, password: { type: 'string', minLength: 8, maxLength: 128 } } },
     },
   },

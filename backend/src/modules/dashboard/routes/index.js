@@ -4,7 +4,6 @@ import { requireAuth } from "../../../core/middleware/auth.js";
 import { wrap, ok, HttpError } from "../../../shared/helpers.js";
 
 const r = Router();
-r.use(requireAuth);
 
 const count = async (q) => {
   const { count: c, error } = await q;
@@ -12,7 +11,7 @@ const count = async (q) => {
   return c ?? 0;
 };
 
-r.get("/dashboard", wrap(async (req, res) => {
+r.get("/dashboard", requireAuth, wrap(async (req, res) => {
   const sid = req.user.startupId;
   const P = () => db.from("prospects").select("id", { count: "exact", head: true }).eq("startup_id", sid);
   const [total, hot, high, medium, low, contacted, interested, followUpsDue, messagesReady] = await Promise.all([
@@ -28,13 +27,13 @@ r.get("/dashboard", wrap(async (req, res) => {
   res.json({ counts: { total, hot, high, medium, low, contacted, interested, followUpsDue, messagesReady }, activities });
 }));
 
-r.get("/activities", wrap(async (req, res) => {
+r.get("/activities", requireAuth, wrap(async (req, res) => {
   const limit = Math.min(100, parseInt(req.query.limit) || 25);
   res.json({ activities: ok(await db.from("activities").select("*").eq("startup_id", req.user.startupId)
     .order("created_at", { ascending: false }).limit(limit)) });
 }));
 
-r.get("/follow-ups", wrap(async (req, res) => {
+r.get("/follow-ups", requireAuth, wrap(async (req, res) => {
   let q = db.from("follow_ups").select("*, outreach(id, subject, prospect_id)")
     .eq("startup_id", req.user.startupId).order("due_at", { ascending: true, nullsFirst: false });
   if (req.query.status) q = q.eq("status", String(req.query.status));
@@ -42,7 +41,7 @@ r.get("/follow-ups", wrap(async (req, res) => {
 }));
 
 // Update or delete a scheduled follow-up record. These are records only; no message is sent.
-r.patch("/follow-ups/:id", wrap(async (req, res) => {
+r.patch("/follow-ups/:id", requireAuth, wrap(async (req, res) => {
   const id = String(req.params.id);
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(400, "Invalid follow-up id");
   const allowed = new Set(["pending", "recorded", "sent", "cancelled"]);
@@ -62,11 +61,11 @@ r.patch("/follow-ups/:id", wrap(async (req, res) => {
   const { data, error } = await db.from("follow_ups").update(patch)
     .eq("id", id).eq("startup_id", req.user.startupId).select().maybeSingle();
   if (error) throw error;
-  if (!data) return res.status(404).json({ error: "Follow-up not found" });
+  if (!data) throw new HttpError(404, "Follow-up not found", undefined, "RESOURCE_NOT_FOUND");
   res.json({ followUp: data });
 }));
 
-r.delete("/follow-ups/:id", wrap(async (req, res) => {
+r.delete("/follow-ups/:id", requireAuth, wrap(async (req, res) => {
   const id = String(req.params.id);
   const { data, error } = await db.from("follow_ups").delete()
     .eq("id", id).eq("startup_id", req.user.startupId).select("id").maybeSingle();
@@ -75,7 +74,7 @@ r.delete("/follow-ups/:id", wrap(async (req, res) => {
 }));
 
 // Usage vs plan limits (tracked only; not enforced in this MVP)
-r.get("/usage", wrap(async (req, res) => {
+r.get("/usage", requireAuth, wrap(async (req, res) => {
   const sid = req.user.startupId;
   const sub = ok(await db.from("subscriptions").select("*, plans(*)").eq("startup_id", sid)
     .order("created_at", { ascending: false }).limit(1).maybeSingle());

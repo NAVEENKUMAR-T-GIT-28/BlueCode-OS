@@ -8,26 +8,14 @@ import { errorHandler } from './core/middleware/errorHandler.js';
 import { notFound } from './core/middleware/notFound.js';
 import { loadModules } from './bootstrap/modules.js';
 import { openApiSpec } from './docs-openapi.js';
-import { db } from './db.js';
+import { db } from './infrastructure/database/supabase.js';
 
 export function createApp(config) {
   const app = express();
   if (config.trustProxy) app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.use(requestContext);
-  app.use(helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net', 'https://fonts.googleapis.com'],
-        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'https://cdn.jsdelivr.net'],
-        imgSrc: ["'self'", 'data:', 'https:'],
-        connectSrc: ["'self'", '*'],
-      },
-    },
-  }));
+  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.use(cors({
     origin(origin, callback) {
       if (!origin || config.corsOrigins.includes(origin)) return callback(null, true);
@@ -42,8 +30,8 @@ export function createApp(config) {
   app.use(express.json({ limit: '1mb', strict: true }));
   app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
-  const globalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: Number(process.env.API_RATE_LIMIT || 300), standardHeaders: 'draft-7', legacyHeaders: false, handler: (req, res) => res.status(429).json({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests. Please try again later.' }, requestId: req.id }) });
-  const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: Number(process.env.AUTH_RATE_LIMIT || 20), standardHeaders: 'draft-7', legacyHeaders: false, handler: (req, res) => res.status(429).json({ success: false, error: { code: 'AUTH_RATE_LIMITED', message: 'Too many authentication attempts. Please try again later.' }, requestId: req.id }) });
+  const globalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: Number(process.env.API_RATE_LIMIT || 300), standardHeaders: 'draft-7', legacyHeaders: false, handler: (req, res) => res.status(429).json({ success: false, error: 'Too many requests. Please try again later.', code: 'RATE_LIMITED', requestId: req.id }) });
+  const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: Number(process.env.AUTH_RATE_LIMIT || 20), standardHeaders: 'draft-7', legacyHeaders: false, handler: (req, res) => res.status(429).json({ success: false, error: 'Too many authentication attempts. Please try again later.', code: 'AUTH_RATE_LIMITED', requestId: req.id }) });
 
   app.get('/api/health', (_req, res) => res.json({ success: true, status: 'ok', service: 'bluecode-os-api' }));
   app.get('/api/ready', async (_req, res, next) => {

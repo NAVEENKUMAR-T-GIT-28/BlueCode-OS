@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "../../../infrastructure/database/supabase.js";
 import { requireAuth } from "../../../core/middleware/auth.js";
 import { wrap, parse, ok } from "../../../shared/helpers.js";
-import { sha, prospectToDb, prospectToUi, outreachToDb, outreachToUi, idOf, timeLabel, activityId } from "../../../shared/workspaceMap.js";
+import { sha, prospectToDb, prospectToUi, outreachToDb, outreachToUi, idOf, timeLabel, activityId } from "../shared/workspaceMap.js";
 
 // Compatibility layer: the React app reads/writes one "workspace" object.
 // Here it is stored in real tables (startups, icps, prospects, signals, decision_makers, outreach, replies, activities).

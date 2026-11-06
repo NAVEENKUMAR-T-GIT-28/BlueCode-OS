@@ -21,39 +21,30 @@ const loginSchema = z.object({
 r.post("/register", wrap(async (req, res) => {
   const { name, email, password } = parse(registerSchema, req.body);
 
-  const { data: existing } = await db.from("users").select("id").eq("email", email).maybeSingle();
-  if (existing) throw new HttpError(409, "Email already registered");
-
-  const startup = ok(await db.from("startups").insert({}).select().single(), "Could not create account");
-  try {
-    const password_hash = await bcrypt.hash(password, 12);
-    const user = ok(await db.from("users")
-      .insert({ startup_id: startup.id, name, email, password_hash, role: "owner" }).select().single(),
-      "Could not create user");
-    const endsAt = new Date(Date.now() + 15 * 24 * 3600 * 1000).toISOString();
-    ok(await db.from("subscriptions")
-      .insert({ startup_id: startup.id, plan_code: "trial", status: "trialing", ends_at: endsAt }),
-      "Could not start trial");
-    audit(user.id, "auth.register", { startup_id: startup.id });
-    res.status(201).json({ token: signToken(user), user: pub(user) });
-  } catch (e) {
-    await db.from("startups").delete().eq("id", startup.id); // cascade cleans partial data
-    throw e;
-  }
+  const password_hash = await bcrypt.hash(password, 12);
+  const endsAt = new Date(Date.now() + 15 * 24 * 3600 * 1000).toISOString();
+  // One Postgres function call = one transaction. The function creates tenant, user and trial atomically.
+  const created = ok(await db.rpc("register_startup_user", {
+    p_name: name, p_email: email, p_password_hash: password_hash, p_trial_ends_at: endsAt
+  }), "Could not create account");
+  const user = Array.isArray(created) ? created[0] : created;
+  if (!user) throw new HttpError(500, "Account registration returned no user", undefined, "REGISTRATION_FAILED");
+  audit(user.id, "auth.register", { startup_id: user.startup_id });
+  res.status(201).json({ token: signToken(user), user: pub(user) });
 }));
 
 r.post("/login", wrap(async (req, res) => {
   const { email, password } = parse(loginSchema, req.body);
-  const { data: user } = await db.from("users").select("*").eq("email", email).maybeSingle();
+  const user = ok(await db.from("users").select("*").eq("email", email).maybeSingle());
   const good = user && (await bcrypt.compare(password, user.password_hash));
   if (!good) throw new HttpError(401, "Invalid email or password");
-  await db.from("users").update({ last_login_at: new Date().toISOString() }).eq("id", user.id);
+  ok(await db.from("users").update({ last_login_at: new Date().toISOString() }).eq("id", user.id));
   audit(user.id, "auth.login");
   res.json({ token: signToken(user), user: pub(user) });
 }));
 
 r.get("/me", requireAuth, wrap(async (req, res) => {
-  const { data: user } = await db.from("users").select("*").eq("id", req.user.id).maybeSingle();
+  const user = ok(await db.from("users").select("*").eq("id", req.user.id).maybeSingle());
   if (!user) throw new HttpError(401, "User no longer exists");
   res.json({ user: pub(user) });
 }));

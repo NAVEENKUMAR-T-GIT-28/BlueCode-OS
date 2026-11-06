@@ -15,16 +15,14 @@
 ```json
 {
   "success": false,
-  "error": { 
-    "code": "VALIDATION_ERROR", 
-    "message": "Request validation failed", 
-    "details": {} 
-  },
+  "error": "Request validation failed",
+  "code": "VALIDATION_ERROR",
+  "details": {},
   "requestId": "uuid"
 }
 ```
 
-Legacy successful response shapes are intentionally retained to avoid breaking the current React application. Some existing feature handlers still return legacy `{ error: ... }` bodies for route-local errors; convert those to `HttpError` so all failures use the central contract.
+Successful response shapes are intentionally retained to avoid breaking the current React application. Errors use a string `error` field for compatibility with the existing frontend, a machine-readable top-level `code`, optional `details`, and `requestId`. Route-local errors should use `HttpError` or flow through the central error handler.
 
 ## Adding a module
 
